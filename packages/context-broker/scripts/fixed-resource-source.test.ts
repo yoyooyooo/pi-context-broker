@@ -1,3 +1,5 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
+import { copyReferenceProtocol } from "./fixtures/skill-ref-fixture";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
@@ -5,30 +7,43 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ContentRecord, SkillRecord, SourceConfig } from "../src/types";
+import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
+import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBudget } from "../src/resource-read-types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const exists = (path: string) => stat(path).then(() => true, () => false);
 
 // Isolated bundled SDK fixtures exercise the source/storage boundary. They never
 // replace the repository SDK or contact Notion; each copy owns its module cache.
-async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Array } = {}) {
+async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Array; resourceEffectsVersion?: number | null } = {}) {
   const evidence = process.env.CONTEXT_BROKER_FIXED_RESOURCE_EVIDENCE ?? tmpdir();
   await mkdir(evidence, { recursive: true });
   const root = await realpath(await mkdtemp(join(evidence, "fixed-resource-source-")));
   await cp(new URL("../src", import.meta.url), join(root, "src"), { recursive: true });
   await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
   const proofVersion = options.proofVersion === undefined ? 1 : options.proofVersion;
+  const resourceEffectsVersion = options.resourceEffectsVersion === undefined ? 1 : options.resourceEffectsVersion;
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
 import { writeFile, symlink } from 'node:fs/promises';
-export const SDK_VERSION = 1, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const SKILL_REF_VERSION = 2, SDK_VERSION = 3, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const RESOURCE_READ_CONTRACT_VERSION = 1, CONSUMPTION_EFFECTS_VERSION = 1;
+${resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${resourceEffectsVersion};`}
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
 export const calls = [];
 let state;
 export function configure(value) { state = value; }
+export async function selectLibrary() { throw new Error('library selection must not run for fixed resource reads'); }
+export async function resolveLibrary() { throw new Error('library discovery must not run for fixed resource reads'); }
 export function parseDuration() { return 0; }
 export function consume() { throw new Error('main preparation must not run'); }
 export function decodeConsumeResult() { throw new Error('main decoder must not run'); }
+export function decodeResourceReadResult() { throw new Error('resource decoder must not run twice'); }
+export async function readResources(input, options) {
+  calls.push({ input, options });
+  state.afterBatch?.();
+  return state.batchBudgetOverride === undefined ? state.batchResponse : { ...state.batchResponse, budget: state.batchBudgetOverride };
+}
 export async function readSkill(target, options) {
   calls.push({ target, options });
   if (state.symlink) await symlink(state.symlink, options.output);
@@ -37,38 +52,150 @@ export async function readSkill(target, options) {
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   return { ...state.response, output: options.output, reused: false, ...state.overrides };
 }
+export async function resolveReference(target, options) {
+  calls.push({ operation: 'resolve', target, options });
+  state.afterResolve?.();
+  if (state.resolveError) throw state.resolveError;
+  return state.relativeResponse;
+}
 `);
-  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
-    sdk_version: 1, consumer_contract_version: 1, ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
+  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
+    sdk_version: 3, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
+    ...(resourceEffectsVersion === null ? {} : { resource_read_effects_version: resourceEffectsVersion }),
+    ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);
   const boundary = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
-  const id = "shared_skill:fixed-resource:owner", scope = hash("fixed resource scope"), version = hash("fixed resource version");
-  const snapshot = "s_" + hash(JSON.stringify([scope, id, version])), prefix = "skill://" + encodeURIComponent(id) + "/";
+  const id = "skill://owner?library=00000000-0000-4000-8000-000000000099", scope = hash("fixed resource scope"), version = hash("fixed resource version");
+  const snapshot = "s_" + hash(JSON.stringify([scope, id, version])), prefix = id;
   const main = "SKILL.md", path = "references/guide.md", bytes = Buffer.from(options.bytes ?? Buffer.from("\ufeffExact resource.\r\nSecond line.\r\n"));
   const content: ContentRecord = { id, kind: "skill", name: "owner", alias: "owner", description: "Fixed resource fixture", default_context: false, enabled: true,
-    entrypoint: main, ref: prefix + main, locator: { type: "shared_skill", library_id: "fixed-resource", skill_id: "owner",
+    entrypoint: main, ref: nativeFileRef(prefix, String(main)), locator: { type: "shared_skill", library_id: "00000000-0000-4000-8000-000000000099", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const source: Extract<SourceConfig, { type: "notion" }> = { id: "notion", type: "notion", cacheDir: join(root, "cache"), activation: { offline: true }, prefetch: false };
   const record: SkillRecord = { ...content, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false };
-  const ref = prefix + path + "?snapshot=" + snapshot + "&file_id=guide";
+  const ref = nativeFileRef(prefix, String(path), String(snapshot));
   const response = { record: content, entrypoint: main, scope, snapshot_id: snapshot, version_id: version, path, ref, source: "local_snapshot",
     freshness: { policy: "pinned" }, materialization: { manifest_complete: true, local_files_ready: false, materialized_paths: [path], loaded: false },
     bytes: bytes.length, sha256: hash(bytes), entrypoint_sha256: hash("independent main commitment"),
     file_bindings: [{ file_id: "main", path: main, page_id: "00000000-0000-4000-8000-000000000001" },
       { file_id: "guide", path, page_id: "00000000-0000-4000-8000-000000000002" }] };
-  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined };
+  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined,
+    afterBatch: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown,
+    batchBudgetOverride: undefined as ResourceReadBudget | undefined, relativeResponse: undefined as unknown,
+    afterResolve: undefined as (() => void) | undefined, resolveError: undefined as Error | undefined };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
-  const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal, "sdk");
-  return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read };
+  const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal);
+  const readBatch = (policy?: ConsumptionPolicy, budget: ResourceReadBudget = DEFAULT_RESOURCE_READ_BUDGET, signal?: AbortSignal) => {
+    const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: main,
+      file_bindings: response.file_bindings, files: [
+        { path: main, bytes: Buffer.byteLength("independent main commitment"), sha256: response.entrypoint_sha256 },
+        { path, bytes: bytes.length, sha256: hash(bytes) },
+      ] };
+    state.batchResponse ??= { version: 1, status: "ready", manifest, manifest_sha256: hash(JSON.stringify(manifest)),
+      selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, budget,
+      files: [{ requested_ref: ref, ref, path, file_id: "guide", bytes: bytes.length, sha256: hash(bytes), encoding: "utf8", content: bytes.toString("utf8") }],
+      ...(resourceEffectsVersion === null ? {} : { effects: noConsumptionWrites() }) };
+    return boundary.readNotionResources(record, [ref], budget, source, root, signal, policy);
+  };
+  return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read, readBatch };
 }
+
+test("batch source keeps zero-write effects and omits retired SDK options with exact fixed bytes", async () => {
+  const f = await fixture(), observed: ConsumptionEffects[] = [];
+  const result = await f.readBatch({ readOnly: true, observeEffects: effects => observed.push(effects) });
+  expect(f.sdk.calls).toHaveLength(1);
+  expect(f.sdk.calls[0]).toMatchObject({ input: { version: 1, refs: [f.ref] } });
+  expect(f.sdk.calls[0].options).not.toHaveProperty("readOnly");
+  expect(result.effects).toEqual(noConsumptionWrites()); expect(observed).toEqual([noConsumptionWrites()]);
+  expect(result.files[0]).toMatchObject({ requested_ref: f.ref, ref: f.ref, file_id: "guide", bytes: f.bytes.length, sha256: hash(f.bytes), content: f.bytes.toString("utf8") });
+  expect(result.selection).toEqual({ scope: f.record.sourceScope, owner: f.record.id, snapshot_id: f.snapshot, version_id: f.response.version_id });
+  const effects = noConsumptionWrites();
+  f.state.batchResponse = { version: 1, status: "failed", effects,
+    error: Object.freeze({ code: "NOTION_READ_ONLY", message: "semantic write forbidden", details: { effects } }) };
+  await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "NOTION_READ_ONLY", details: { effects } });
+});
+
+test("Source-relative resolution keeps the containing resource identity without materializing either owner", async () => {
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=00000000-0000-4000-8000-000000000099", observed: ConsumptionEffects[] = [];
+  f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
+  expect(await f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, undefined,
+    { readOnly: true, observeEffects: value => observed.push(value) })).toBe(ref);
+  expect(f.sdk.calls).toHaveLength(1);
+  expect(f.sdk.calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from: f.ref, offline: true } });
+  expect(f.sdk.calls[0].options).not.toHaveProperty("output");
+  expect(observed).toEqual([noConsumptionWrites()]); expect(await exists(f.resourceRoot)).toBe(false);
+});
+
+test("Source-relative identity rejects mismatched bases, foreign libraries, malformed output and late cancellation", async () => {
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=00000000-0000-4000-8000-000000000099";
+  const read = (signal?: AbortSignal) => f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, signal);
+  for (const changed of [{ version: 2 }, { from: nativeFileRef(f.prefix, "SKILL.md") }, { ref: "skill://target/SKILL.md?library=6a7531bf-74f8-56ac-8b86-703222d552b8" },
+    { ref: "../target/SKILL.md" }, { ref: nativeFileRef(f.prefix, "SKILL.md") }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {
+    f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites(), ...changed };
+    await expect(read()).rejects.toBeDefined();
+  }
+  f.state.relativeResponse = { version: 1, from: f.ref, ref: f.ref, effects: noConsumptionWrites() };
+  expect(await read()).toBe(f.ref);
+  f.state.resolveError = Object.assign(new Error("Source map changed"), { code: "CURRENT_SOURCE_CHANGED" });
+  await expect(read()).rejects.toMatchObject({ code: "CURRENT_SOURCE_CHANGED" });
+  f.state.resolveError = undefined;
+  f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
+  const controller = new AbortController(); f.state.afterResolve = () => controller.abort();
+  await expect(read(controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(f.sdk.calls.every((call: { operation?: string }) => call.operation === "resolve")).toBe(true);
+  expect(await exists(f.resourceRoot)).toBe(false);
+});
+
+test("the source boundary sends and verifies the same per-call resource budget", async () => {
+  for (const timeBudgetMs of [30000, 120000]) {
+    const f = await fixture(), budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs };
+    const result = await f.readBatch({ readOnly: true }, budget);
+    expect(f.sdk.calls).toHaveLength(1);
+    expect(f.sdk.calls[0].input).toEqual({ version: 1, refs: [f.ref], budget });
+    expect(result.budget).toEqual(budget);
+    expect(result.files[0]).toMatchObject({ ref: f.ref, sha256: hash(f.bytes), bytes: f.bytes.length });
+    expect(result.selection.snapshot_id).toBe(f.snapshot);
+  }
+});
+
+test("a mismatched SDK resource budget never publishes files", async () => {
+  const budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs: 120000 };
+  for (const changed of [{ timeBudgetMs: 30000 }, { maxFiles: 17 }, { maxBytes: 1048577 }]) {
+    const f = await fixture(); f.state.batchBudgetOverride = { ...budget, ...changed };
+    await expect(f.readBatch({ readOnly: true }, budget)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
+    expect(f.sdk.calls).toHaveLength(1); expect(f.sdk.calls[0].input.budget).toEqual(budget);
+    expect(await exists(f.resourceRoot)).toBe(false);
+  }
+});
+
+test("an explicit resource time budget preserves cancellation and SDK timeout failures", async () => {
+  const budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs: 120000 };
+  const f = await fixture(), controller = new AbortController();
+  f.state.afterBatch = () => controller.abort();
+  await expect(f.readBatch({ readOnly: true }, budget, controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(await exists(f.resourceRoot)).toBe(false); expect(f.sdk.calls).toHaveLength(1);
+  const timed = await fixture(), effects = noConsumptionWrites();
+  timed.state.batchResponse = { version: 1, status: "failed", effects,
+    error: { code: "RESOURCE_TIME_BUDGET", message: "Complete resource operation timed out", details: { time_budget_ms: 120000 } } };
+  await expect(timed.readBatch({ readOnly: true }, budget)).rejects.toMatchObject({ code: "RESOURCE_TIME_BUDGET" });
+  expect(await exists(timed.resourceRoot)).toBe(false); expect(timed.sdk.calls).toHaveLength(1);
+});
+
+test("a producer missing the current effects contract is rejected before any batch dispatch", async () => {
+  const f = await fixture({ resourceEffectsVersion: null });
+  await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE", details: { effects: noConsumptionWrites() } });
+  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.source.cacheDir!)).toBe(false);
+  await expect(f.readBatch()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect(f.sdk.calls).toHaveLength(0);
+});
 
 test("one scalar output read publishes exact text with an independent owner commitment and no entry", async () => {
   const f = await fixture(), result = await f.read();
   expect(result.selection).toEqual({ scope: f.record.sourceScope, owner: f.record.id, snapshot_id: f.snapshot, version_id: f.response.version_id });
   expect(result.ownerBinding.body_sha256).toBe(f.response.entrypoint_sha256);
-  expect(result.ownerBinding.ref).toBe(f.prefix + f.main + "?snapshot=" + f.snapshot + "&file_id=main");
+  expect(result.ownerBinding.ref).toBe(nativeFileRef(f.prefix, String(f.main), String(f.snapshot)));
   expect(result.file).toEqual({ requested_ref: f.ref, ref: f.ref, path: f.path, file_id: "guide", bytes: f.bytes.length, sha256: hash(f.bytes), output: join(f.resourceRoot, f.path) });
   expect(await readFile(result.file.output)).toEqual(f.bytes);
   expect(Object.keys(result).sort()).toEqual(["entrypoint", "file", "ownerBinding", "selection"]);
@@ -90,25 +217,23 @@ test("scalar output preserves empty and binary resources beyond the batch maximu
   }
 });
 
-test("stable File IDs accept old path hints and main aliases retain the main route", async () => {
+test("fixed reads reject a former path and preserve the exact main route", async () => {
   const f = await fixture(), old = f.ref.replace(f.path, "former/guide.md");
-  expect((await f.read(old)).file).toMatchObject({ requested_ref: old, ref: f.ref, path: f.path, file_id: "guide" });
+  await expect(f.read(old)).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
   const main = await fixture();
-  main.state.response = { ...main.response, path: main.main, ref: main.prefix + main.main + "?snapshot=" + main.snapshot + "&file_id=main",
+  main.state.response = { ...main.response, path: main.main, ref: nativeFileRef(main.prefix, String(main.main), String(main.snapshot)),
     sha256: hash(main.bytes), entrypoint_sha256: hash(main.bytes) };
-  expect(await main.read(main.ref.replace("file_id=guide", "file_id=main"))).toBeUndefined();
+  expect(await main.read(nativeFileRef(main.prefix, main.main, main.snapshot))).toBeUndefined();
   expect(main.sdk.calls).toHaveLength(1); expect(await exists(main.resourceRoot)).toBe(false);
 });
 
-test("older SDKs and custom transports fall back before reading or staging a resource", async () => {
+test("an old SDK fails explicitly and never publishes a resource or uses another transport", async () => {
   const f = await fixture({ proofVersion: null });
-  expect(await f.read()).toBeUndefined();
-  expect(await f.boundary.readFixedNotionResource(f.record, f.ref, f.source, f.root)).toBeUndefined();
-  expect(await f.boundary.readFixedNotionResource(f.record, f.ref, { ...f.source, command: ["must-not-run"] }, f.root, undefined, "sdk")).toBeUndefined();
-  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.source.cacheDir!)).toBe(false);
+  await expect(f.read()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.resourceRoot)).toBe(false);
   const incompatible = await fixture({ proofVersion: 2 });
   await expect(incompatible.read()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
-  expect(incompatible.sdk.calls).toHaveLength(0); expect(await exists(incompatible.source.cacheDir!)).toBe(false);
+  expect(incompatible.sdk.calls).toHaveLength(0); expect(await exists(incompatible.resourceRoot)).toBe(false);
 });
 
 test("scalar output rejects foreign identities and malformed proof before immutable publication", async () => {
@@ -120,13 +245,22 @@ test("scalar output rejects foreign identities and malformed proof before immuta
     { override: { output: "/foreign/output" }, code: "SOURCE_PREPARATION_INVALID" },
     { override: { bytes: -1 }, code: "SOURCE_RESPONSE_INVALID" },
     { override: { reused: "yes" }, code: "SOURCE_PREPARATION_INVALID" },
-    { override: { file_bindings: [] }, code: "SOURCE_IDENTITY_MISMATCH" },
+    { override: { file_bindings: [{ file_id: "same", path: "references/guide.md", page_id: "00000000-0000-4000-8000-000000000001" }, { file_id: "same", path: "another.md", page_id: "00000000-0000-4000-8000-000000000002" }] }, code: "SOURCE_RESPONSE_INVALID" },
   ];
   for (const { override, code } of cases) {
     const f = await fixture(); f.state.overrides = override;
     await expect(f.read()).rejects.toMatchObject({ code });
     expect(await exists(f.resourceRoot)).toBe(false);
   }
+});
+
+test("a fixed Source resource preserves its exact path proof without inventing a native File ID", async () => {
+  const f = await fixture();
+  f.state.overrides = { file_bindings: [] };
+  const result = await f.read();
+  expect(result!.file).toMatchObject({ path: f.path, ref: f.ref });
+  expect(result!.file).not.toHaveProperty("file_id");
+  expect(result!.ownerBinding.ref).toBe(nativeFileRef(f.prefix, f.main, f.snapshot));
 });
 
 test("corrupt or symlinked SDK output and cancellation never publish ready resource bytes", async () => {

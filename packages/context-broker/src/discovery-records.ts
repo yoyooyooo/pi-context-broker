@@ -1,10 +1,11 @@
+import { parseNativeReference, formatNativeReference } from "./native-reference";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { RouterDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord, RawCatalogMember, CatalogRemoteReference, CatalogResolutionContext } from "./types";
 import { normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
 import { isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
-import { sharedSkillId } from "./shared-skill-identity";
+import { sharedSkillId, validSharedSkillId } from "./shared-skill-identity";
 
 export function recordKind(record: DiscoveryRecord): "skill" | "router" | "prompt" {
   return record.kind ?? "skill";
@@ -22,8 +23,7 @@ function encodeSelectionId(id: string): string {
   return encodeURIComponent(id).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
 }
 function preciseSelector(record: DiscoveryRecord): string {
-  return record.locator?.type === "notion_page" || record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "")
-    : record.locator?.type === "notion_subscription" ? record.locator.subscription_id.replaceAll("-", "")
+  return record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "")
     : encodeSelectionId(record.id ?? "local:" + resolve(record.path));
 }
 function recordNamespace(record: DiscoveryRecord): string {
@@ -35,7 +35,7 @@ export function preciseRecordToken(record: DiscoveryRecord): string {
   if (isBundledBuiltin(record)) return recordToken(record);
   return `${record.alias ?? recordNormalizedName(record)}@${preciseSelector(record)}@${recordNamespace(record)}`;
 }
-function parsePreciseSelection(query: string): { selector: string; namespace: string } | undefined {
+function parsePreciseSelection(query: string): { selector: string; namespace: string; skillId?: string } | undefined {
   if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return undefined;
   const parts = query.split("@");
   if (parts.length !== 3 || !parts[0] || /[\s/]/u.test(parts[0]) || !/^[\p{L}\p{N}._-]+$/u.test(parts[2]!)) return undefined;
@@ -44,6 +44,8 @@ function parsePreciseSelection(query: string): { selector: string; namespace: st
   try {
     const id = decodeURIComponent(selector);
     if (id.startsWith("local:") && isAbsolute(id.slice(6)) && encodeSelectionId(id) === selector) return { selector, namespace: parts[2]! };
+    if (id.startsWith("skill:") && encodeSelectionId(id) === selector && validSharedSkillId(id.slice(6)))
+      return { selector, namespace: parts[2]!, skillId: id.slice(6) };
   } catch { /* Malformed text is not an identity-qualified reference. */ }
   return undefined;
 }
@@ -52,7 +54,11 @@ export function isPreciseSelectionToken(query: string): boolean {
 }
 export function matchesPreciseRecordToken(query: string, record: DiscoveryRecord): boolean {
   const selection = parsePreciseSelection(query);
-  return Boolean(selection && !isBundledBuiltin(record) && selection.selector === preciseSelector(record) && selection.namespace === recordNamespace(record));
+  if (!selection || isBundledBuiltin(record) || selection.namespace !== recordNamespace(record)) return false;
+  // A registered member's menu identity must still resolve after it gains its
+  // physical page, so repeating the accepted token never rediscovers upstream.
+  return selection.skillId === undefined ? selection.selector === preciseSelector(record)
+    : record.locator?.type === "shared_skill" && record.locator.skill_id === selection.skillId;
 }
 
 export function recordIdentity(record: DiscoveryRecord): string {
@@ -327,26 +333,24 @@ export function parseCatalogMember(value: unknown): RawCatalogMember {
   exactKeys(value.source, ["namespace"]);
   if (!isRecord(value.locator)) throw new Error("Remote member requires stable locator");
   const locator = value.locator;
-  const subscription = locator.type === "notion_subscription";
-  const shared = locator.type === "shared_skill";
-  if (locator.type !== "notion_page" && !subscription && !shared) throw new Error("Invalid remote member locator");
-  const keys = subscription ? ["type", "subscription_id", "database_id", "data_source_id", "target_database_id"] : ["type", "page_id", "database_id", "data_source_id", ...(shared ? ["library_id", "skill_id"] : [])];
+  if (locator.type !== "shared_skill") throw new Error("Invalid remote member locator");
+  const keys = ["type", "page_id", "database_id", "data_source_id", "library_id", "skill_id"];
   exactKeys(locator, keys);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   if (keys.filter(key => !["type", "library_id", "skill_id"].includes(key)).some(key => typeof locator[key] !== "string" || !uuid.test(locator[key] as string))) throw new Error("Invalid remote member stable identity");
-  const id = subscription ? locator.subscription_id : locator.page_id;
-  const identity = shared && typeof locator.library_id === "string" && typeof locator.skill_id === "string"
-    ? sharedSkillId(locator.library_id, locator.skill_id) : shared ? undefined : `${locator.type}:${id}`;
+  const identity = typeof locator.library_id === "string" && typeof locator.skill_id === "string"
+    ? sharedSkillId(locator.library_id, locator.skill_id) : undefined;
   if (identity === undefined) throw new Error("Invalid shared member identity");
-  const selector = shared ? identity : subscription ? `upstream:${id}` : id;
-  const prefix = `skill://${encodeURIComponent(selector as string)}/`;
-  if (value.id !== identity || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
+  if (value.id !== identity || typeof value.ref !== "string") throw new Error("Remote member ref/identity mismatch");
+  const ref = parseNativeReference(value.ref);
+  if (ref.selector !== identity || !["SKILL.md", "ROUTER.md", "PROMPT.md"].includes(ref.path)) throw new Error("Remote member ref/identity mismatch");
   return value as CatalogRemoteReference;
 }
 
 export function resolveCatalogReference(reference: CatalogRemoteReference, context: CatalogResolutionContext, kind: "skill" | "router"): SkillRecord {
   const sources = (context.sources ?? []).filter(source => source.enabled !== false && source.type === "notion" && (source.namespace ?? source.id) === reference.source.namespace);
-  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId) && record.id === reference.id);
+  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId)
+    && record.id === reference.id);
   const candidates = observedCandidates.filter(record => record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
   const candidateLabels = observedCandidates.map(record => `${record.sourceId}:${record.id}:${JSON.stringify(record.locator)}`);
   const fail = (code: string, message: string): never => { throw new CatalogReferenceError(code, message, candidateLabels); };
@@ -358,7 +362,9 @@ export function resolveCatalogReference(reference: CatalogRemoteReference, conte
   if (!record) fail(observedCandidates.length ? "SOURCE_IDENTITY_MISMATCH" : "CATALOG_MEMBER_UNAVAILABLE", `Record ${reference.id} with the declared locator absent from current credential-scoped catalog for ${reference.source.namespace}`);
   const observed = record!;
   const locator = observed.locator;
-  if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || observed.ref !== reference.ref.split("?")[0]) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
+  const parsed = parseNativeReference(reference.ref);
+  const exactEntry = observed.ref === formatNativeReference({ selector: parsed.selector, path: parsed.path });
+  if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || !exactEntry) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
   return observed;
 }
 
@@ -389,7 +395,9 @@ function memberFromRaw(value: unknown, catalogDir: string, scan: ScanConfig, con
   if (raw.type === "remote") {
     try {
       const record = resolveCatalogReference(raw, context, "skill");
-      return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id, locator: raw.locator, kind: "skill", ref: raw.ref, name: record.name, description: record.description, aliases: record.aliases };
+      return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id,
+        locator: raw.locator,
+        kind: "skill", ref: raw.ref, name: record.name, description: record.description, aliases: record.aliases };
     } catch (error) {
       if (!(error instanceof CatalogReferenceError)) throw error;
       return { ...raw, kind: "skill", name: raw.id, description: `Unavailable: ${error.message}`, unavailable: { code: error.code, message: error.message, candidates: error.candidates } };
@@ -416,7 +424,7 @@ function routerFromRaw(name: string | undefined, value: unknown, catalogPath: st
     const parsed = parseCatalogMember(reference);
     if (parsed.type !== "remote") throw new Error("Remote catalog Router requires remote reference");
     const record = resolveCatalogReference(parsed, context, "router");
-    if (parsed.ref !== record.ref) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
+    if (parseNativeReference(parsed.ref).snapshot !== undefined) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
     return record;
   }
   const catalogDir = dirname(catalogPath);

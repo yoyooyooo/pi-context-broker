@@ -176,8 +176,9 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionText = await readFile(sessionFiles[0], "utf8");
   const sessionEntries = sessionText.trim().split("\n").map(line => JSON.parse(line));
   const guidanceEntries = sessionEntries.filter(entry => entry.type === "custom_message" && entry.customType === "ntn-skills-guidance");
-  assert.equal(guidanceEntries.length, 1, `${host}: continued session must retain one CLI guidance message`);
-  const guidance = JSON.stringify(guidanceEntries[0].content).slice(1, -1);
+  const expectedGuidance = host === "pi" ? 0 : 1;
+  assert.equal(guidanceEntries.length, expectedGuidance, `${host}: local-only sessions must follow the host's Notion guidance contract`);
+  const guidance = guidanceEntries.length ? JSON.stringify(guidanceEntries[0].content).slice(1, -1) : undefined;
   const customMatches = sessionText.match(/"customType":"context-broker"/g) ?? [];
   const markerMatches = sessionText.match(/CONTEXT_BROKER_E2E_MARKER/g) ?? [];
   const reviewMarkerMatches = sessionText.match(/CONTEXT_BROKER_E2E_REVIEW_MARKER/g) ?? [];
@@ -218,7 +219,11 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   for (const [turn, context] of providerContexts.entries()) {
     const messages = JSON.stringify(context.messages);
     assert.ok(!messages.includes("nativePromptSha256"), `${host}: machine-only delivery proofs do not enter provider input`);
-    assert.equal(messages.split(guidance).length - 1, 1, `${host}: turn ${turn + 1} must contain the complete CLI guidance exactly once`);
+    if (guidance !== undefined) assert.equal(messages.split(guidance).length - 1, 1, `${host}: turn ${turn + 1} must contain the complete CLI guidance exactly once`);
+    else {
+      assert.ok(!messages.includes("<ntn-skills-guidance>") && !messages.includes("<ntn-skills-view-catalog>"), `${host}: a local-only session must not receive Notion context`);
+      assert.ok((context.tools ?? []).every(tool => !tool.name?.startsWith("notion_")), `${host}: a local-only session must not expose Notion tools`);
+    }
     for (const marker of ["CONTEXT_BROKER_E2E_MARKER", "CONTEXT_BROKER_E2E_REVIEW_MARKER"]) {
       assert.equal(messages.split(marker).length - 1, 1, `${host}: turn ${turn + 1} provider messages must contain exactly one ${marker} body`);
     }

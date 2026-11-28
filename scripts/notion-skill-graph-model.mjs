@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
@@ -16,7 +17,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
+import { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -28,7 +29,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 18;
+export const GRAPH_GATE_HARNESS_VERSION = 19;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'notion_list', 'notion_use']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'notion-skill-graph-model-evidence.mjs', 'skill-preparation-evidence.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'notion-integration-model.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -40,17 +41,17 @@ export async function graphHarnessIdentity() {
 
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
-    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
-    + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
+    + ';\nimport { parseNativeReference, nativeFileRef, hasExactNativeOwner, bindNativeReference, nativeReferenceLibrary } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
-    + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, validateResourceReadProjection }); }\n';
+    + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, nativeFileRef, hasExactNativeOwner, bindNativeReference, nativeReferenceLibrary, validateResourceReadProjection }); }\n';
 }
 
 export function graphCatalogEvidence(observation, config) {
   const catalogs = observation.filter(event => event.phase === 'catalog');
   assert.ok(catalogs.length, 'An actual native catalog observation is required');
-  const ownerId = decodeURIComponent(config.rootRef.split('/')[2]);
+  const ownerId = parseNativeReference(config.rootRef).selector;
   for (const catalog of catalogs) {
     assert.equal(catalog.stage, 'before_provider_request', 'Only the actual provider system payload proves catalog visibility');
     assert.ok(['pending', 'ready'].includes(catalog.state), 'An unavailable or unobserved catalog cannot prove discovery');
@@ -138,6 +139,12 @@ export function observeGraphGate(api, settings) {
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
   const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
   const same = (a, b) => canonical(a) === canonical(b);
+  const directoryFiles = files => files.map(file => {
+    const { mode, ...publicFile } = file;
+    if (!same(Object.keys(publicFile).sort(), ['bytes', 'path', 'ref', 'sha256'])
+      || mode !== undefined && !['100644', '100755'].includes(mode)) throw new Error('Unknown source file directory shape');
+    return publicFile;
+  });
   const modelProfile = settings.modelProfile === undefined ? undefined : dailyRouteContract(settings.modelProfile);
   if (modelProfile && (!same(settings.modelProfile, modelProfile) || settings.model !== modelProfile.model))
     throw new Error('Daily observer requires the exact frozen model profile');
@@ -180,8 +187,9 @@ export function observeGraphGate(api, settings) {
       ancestor = parent;
     }
   };
-  const makeRef = (id, path, snapshot, fileId) => `skill://${encodeURIComponent(id)}/${path.split('/').map(encodeURIComponent).join('/')}?snapshot=${snapshot}${fileId ? '&file_id=' + encodeURIComponent(fileId) : ''}`;
-  if (typeof settings.parseNativeReference !== 'function') throw new Error('Graph observation requires the installed product reference parser');
+  for (const name of ['parseNativeReference', 'nativeFileRef', 'hasExactNativeOwner', 'bindNativeReference', 'nativeReferenceLibrary'])
+    if (typeof settings[name] !== 'function') throw new Error('Graph observation requires the installed product reference protocol');
+  const makeRef = settings.nativeFileRef;
   const parseRef = value => {
     if (typeof value !== 'string') return undefined;
     try { return value.startsWith('sr:') ? shortReference(value) : settings.parseNativeReference(value); } catch { return undefined; }
@@ -262,65 +270,6 @@ export function observeGraphGate(api, settings) {
     } catch (error) { if (includeFailures) throw error; return []; }
   });
   const sourceViews = () => graphSourceViews(sourceResponses());
-  const submittedNameClaim = input => {
-    const parsed = parseRef(input);
-    if (!submittedUser || !input.startsWith('skill://') || !parsed || parsed.snapshot !== undefined || parsed.fileId !== undefined
-      || parsed.path && parsed.path !== 'SKILL.md' || /^(?:shared_skill:|notion_page:|notion_subscription:|upstream:)/u.test(parsed.selector)
-      || /^[a-f0-9-]{32,36}$/iu.test(parsed.selector)) return undefined;
-    const word = value => value !== undefined && /[\p{L}\p{N}\p{M}_.-]/u.test(value);
-    let start = settings.prompt.indexOf(parsed.selector);
-    while (start !== -1) {
-      const end = start + parsed.selector.length;
-      if (!word([...settings.prompt.slice(0, start)].at(-1)) && !word([...settings.prompt.slice(end)][0]))
-        return { kind: 'submitted-name', selector: parsed.selector, path: parsed.path,
-          promptSha256: submittedUser.promptSha256, promptSequence: submittedUser.sequence,
-          providerPayloadSha256: submittedUser.providerPayloadSha256, span: { start, end },
-          sourceFilesBefore: sourceResponses({ includeFailures: true }).map(item => item.observerResponseFile) };
-      start = settings.prompt.indexOf(parsed.selector, start + 1);
-    }
-    return undefined;
-  };
-  const resolveSubmittedName = claim => {
-    if (claim?.kind !== 'submitted-name') return claim;
-    const fresh = sourceResponses({ includeFailures: true }).filter(item => !claim.sourceFilesBefore.includes(item.observerResponseFile));
-    const operation = item => item.transport === 'sdk' ? item.operation : item.command;
-    const catalogs = fresh.filter(item => operation(item) === 'list');
-    const candidates = [];
-    if (!catalogs.length) return undefined;
-    for (const item of catalogs) {
-      if (!item.observerCompleted || typeof item.requestId !== 'string') return undefined;
-      const projections = graphSourceViews([item]);
-      if (projections.directoryFailures.length || !projections.directories.length) return undefined;
-      for (const { value, facet } of projections.directories) {
-        if (!/^[a-f0-9]{64}$/u.test(value.scope)
-          || !Array.isArray(value.records) || value.count !== value.records.length
-          || !Array.isArray(value.coverage?.failed_sources) || value.coverage.failed_sources.length) return undefined;
-        // A successful background View/search/page is observed cost, not name
-        // authority. A complete ordinary catalog is still required below; failed
-        // or unattributed list work cannot be discarded as background activity.
-        if (facet === 'directory' || value.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in value)) continue;
-        if (value.coverage.exhaustive !== true || value.coverage.search_index_limited !== false
-          || new Set(value.records.map(record => record.id)).size !== value.records.length) return undefined;
-        for (const record of value.records) {
-          if (record.enabled === false || ![record.name, record.alias].includes(claim.selector)) continue;
-          const parsed = parseRef(record.ref), path = record.entrypoint ?? parsed?.path;
-          if (!parsed || parsed.selector !== record.id || !path || path !== parsed.path || !['skill', 'router'].includes(record.kind)
-            || claim.path && claim.path !== path) return undefined;
-          candidates.push({ scope: value.scope, ownerId: record.id, path, record, selectionRequestId: item.requestId });
-        }
-      }
-    }
-    const unique = [...new Map(candidates.map(item => [canonical([item.scope, item.ownerId, item.path, item.record.locator ?? null]), item])).values()];
-    if (unique.length !== 1) return undefined;
-    const selected = unique[0], readIds = new Set(fresh.filter(item => item.observerCompleted
-      && (operation(item) === 'read' || operation(item) === 'consume' && item.value?.preparation?.purpose === 'inspect')).map(item => item.requestId));
-    const reads = sourceViews().entries.filter(item => readIds.has(item.requestId) && typeof item.requestId === 'string'
-      && item.value.scope === selected.scope && item.value.record?.id === selected.ownerId && item.value.path === selected.path);
-    if (reads.length !== 1) return undefined;
-    return { scope: selected.scope, ownerId: selected.ownerId, path: selected.path,
-      nameResolution: { selector: claim.selector, promptSha256: claim.promptSha256, promptSequence: claim.promptSequence,
-        selectionRequestId: selected.selectionRequestId, readRequestId: reads[0].requestId } };
-  };
   function shortReference(value) {
     if (!/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(value)) throw new Error('Invalid session reference');
     const bindings = new Map();
@@ -343,7 +292,7 @@ export function observeGraphGate(api, settings) {
     if (!records.some(({ record, scope }) => scope === identity.scope && record.id === identity.id && record.kind === identity.kind
       && same(record.locator, identity.locator) && settings.parseNativeReference(record.ref).selector === raw.selector)) throw new Error('Session reference lacks an authorized observed owner');
     if (target.kind === 'candidate') {
-      if (raw.path || raw.snapshot !== undefined || raw.fileId !== undefined) throw new Error('Candidate reference cannot contain a pin');
+      if (raw.path || raw.snapshot !== undefined) throw new Error('Candidate reference cannot contain a pin');
     } else {
       if (owner.kind !== 'selected') throw new Error('Resource owner must be a selected reference');
       const entry = facts.entries.find(item => item.value.record.id === identity.id && item.value.scope === identity.scope
@@ -355,13 +304,17 @@ export function observeGraphGate(api, settings) {
           .find(node => node.state === 'prepared' && node.id === identity.id && node.binding.snapshot_id === owner.snapshot_id);
         const file = prepared?.files.find(file => file.path === target.path);
         if (!file || file.ref !== target.ref || file.sha256 !== target.sha256 || file.bytes !== target.bytes
-          || raw.fileId !== target.file_id || target.path === owner.entrypoint) throw new Error('Resource session reference lacks its immutable manifest');
-      } else if (raw.path !== owner.entrypoint || raw.fileId !== owner.file_id) throw new Error('Selected reference changed its main file');
+          || entry.value.file_bindings?.find(binding => binding.path === target.path)?.file_id !== target.file_id || target.path === owner.entrypoint) throw new Error('Resource session reference lacks its immutable manifest');
+      } else if (raw.path !== owner.entrypoint) throw new Error('Selected reference changed its main file');
     }
     return { ...raw, scope: identity.scope };
   }
   const resolveMainReference = parsed => {
     if (!parsed) return parsed;
+    if (!settings.hasExactNativeOwner(parsed)) {
+      if (!root || !settings.hasExactNativeOwner(root)) return undefined;
+      parsed = settings.bindNativeReference(parsed, settings.nativeReferenceLibrary(root));
+    }
     const views = sourceViews();
     const candidates = [...views.directories.map(item => ({ value: item.value, records: item.value.records })),
       ...views.entries.map(item => ({ value: item.value, records: [item.value.record], pin: item.value.snapshot_id })),
@@ -375,24 +328,9 @@ export function observeGraphGate(api, settings) {
       });
     });
     const exact = candidates.filter(candidate => candidate.ownerId === parsed.selector);
-    const names = exact.length ? [] : candidates.filter(candidate => [candidate.record.name, candidate.record.alias].includes(parsed.selector)
+    if (parsed.path) return parsed;
+    const matched = exact.filter(candidate => (parsed.scope === undefined || parsed.scope === candidate.scope)
       && (parsed.snapshot === undefined || candidate.pin === parsed.snapshot));
-    // Source receipts may corroborate an actually disclosed owner; a hidden full
-    // catalog alone never authorizes a guessed name. Fixed names use that pin's
-    // historical record, not a current directory's renamed owner.
-    const named = names.filter(candidate => [...discovered].some(([ref, proof]) => {
-      const prior = parseRef(ref);
-      return prior && (prior.selector === candidate.ownerId || [candidate.record.name, candidate.record.alias].includes(prior.selector))
-        && (proof.scope === undefined || proof.scope === candidate.scope)
-        && (parsed.snapshot === undefined || prior.snapshot === parsed.snapshot);
-    }));
-    if (parsed.path && !names.length) return parsed;
-    const matched = (names.length ? named : exact).filter(candidate => (parsed.scope === undefined || parsed.scope === candidate.scope)
-      && (parsed.snapshot === undefined || candidate.pin === parsed.snapshot || [...discovered].some(([ref, proof]) => {
-        const prior = parseRef(ref);
-        return prior?.selector === candidate.ownerId && prior.path === candidate.path && prior.snapshot === parsed.snapshot
-          && (proof.scope === undefined || proof.scope === candidate.scope);
-      })));
     const unique = [...new Map(matched.map(candidate => [JSON.stringify([candidate.scope, candidate.ownerId, candidate.path]), candidate])).values()];
     return unique.length === 1 ? { ...parsed, selector: unique[0].ownerId, path: parsed.path || unique[0].path, scope: unique[0].scope } : undefined;
   };
@@ -426,7 +364,7 @@ export function observeGraphGate(api, settings) {
             const actual = join(contentRoot, item.path), hash = partial ? item.sha256 : item.hash;
             if (!inside(contentRoot, actual) || !/^[a-f0-9]{64}$/.test(hash) || !Number.isSafeInteger(item.bytes) || item.bytes < 0) throw new Error('Snapshot resource escaped its verified owner');
             const binding = publicRead.file_bindings?.find(binding => binding.path === item.path);
-            const main = item.path === mainPath, ref = makeRef(ownerId, item.path, snapshot, binding?.file_id);
+            const main = item.path === mainPath, ref = makeRef(ownerId, item.path, snapshot);
             if (partial && item.ref !== ref) throw new Error('Entry file ref differs from its scope/owner/snapshot binding');
             const declared = { ref, logicalId: main ? ownerId : binding?.file_id ?? ownerId + '/' + item.path, ownerId, scope: receipt.scope, snapshot, version: publicRead.version_id, sha256: hash, bytes: item.bytes, path: item.path, actual, actuals: [actual], fileId: binding?.file_id, role: main ? 'entrypoint' : 'resource', kind: publicRead.record.kind, projection: receipt.projection, manifestSha256: digest(receiptBytes) };
             let bytes;
@@ -459,9 +397,10 @@ export function observeGraphGate(api, settings) {
         || value.bytes !== output.bytes || value.sha256 !== output.sha256 || digest(output.content) !== output.sha256
         || Buffer.byteLength(output.content) !== output.bytes || value.entrypoint_sha256 !== owner.body_sha256
         || value.version_id !== owner.binding.version_id) throw new Error('Observed scalar resource differs from its selected owner manifest');
-      files.push({ ref: value.ref, logicalId: parsed.fileId ?? value.record.id + '/' + value.path, ownerId: value.record.id,
+      const fileId = value.file_bindings?.find(binding => binding.path === value.path)?.file_id;
+      files.push({ ref: value.ref, logicalId: fileId ?? value.record.id + '/' + value.path, ownerId: value.record.id,
         scope: value.scope, snapshot: value.snapshot_id, version: value.version_id, sha256: output.sha256, bytes: output.bytes,
-        path: value.path, actual: output.path, actuals: [output.path], fileId: parsed.fileId, role: 'resource', kind: value.record.kind,
+        path: value.path, actual: output.path, actuals: [output.path], fileId, role: 'resource', kind: value.record.kind,
         projection: 'selected-resource', content: output.content, materialized: true, sourceOutputObserved: true });
     }
     for (const observed of outputs.resources) {
@@ -473,7 +412,7 @@ export function observeGraphGate(api, settings) {
       for (const file of selected) {
         const parsed = parseRef(file.ref), declared = owner.files.find(item => item.path === file.path);
         if (!parsed || !declared || declared.ref !== file.ref || declared.sha256 !== file.sha256 || declared.bytes !== file.bytes
-          || parsed.selector !== selection.owner || parsed.snapshot !== selection.snapshot_id || parsed.fileId !== file.file_id) throw new Error('Observed resource batch differs from its selected immutable manifest');
+          || parsed.selector !== selection.owner || parsed.snapshot !== selection.snapshot_id || manifest.file_bindings?.find(binding => binding.path === file.path)?.file_id !== file.file_id) throw new Error('Observed resource batch differs from its selected immutable manifest');
         if (file.encoding !== 'utf8') continue;
         files.push({ ref: file.ref, logicalId: file.file_id ?? selection.owner + '/' + file.path, ownerId: selection.owner,
           scope: selection.scope, snapshot: selection.snapshot_id, version: selection.version_id, sha256: file.sha256, bytes: file.bytes,
@@ -491,7 +430,7 @@ export function observeGraphGate(api, settings) {
     return [...unique.values()];
   };
   const hostIndexProof = (input, source) => {
-    if (source.role !== 'entrypoint' || source.projection !== 'entry' || !source.fileId) return undefined;
+    if (source.role !== 'entrypoint' || source.projection !== 'entry') return undefined;
     const main = canonicalReadPath(input);
     if (!main || ![...advertisedPaths].some(path => canonicalReadPath(path) === main)) return undefined;
     let directory = settings.path.dirname(main);
@@ -576,7 +515,7 @@ export function observeGraphGate(api, settings) {
     if (raw && !parsed) return false;
     if (discovered.has(input) || advertisedPaths.has(input)) return true;
     if (parsed) return [...discovered].some(([ref, proof]) => { const old = resolveMainReference(parseRef(ref)); return old && old.selector === parsed.selector && old.path === parsed.path
-      && (parsed.fileId === undefined || old.fileId === parsed.fileId) && (parsed.scope === undefined || (old.scope === undefined || old.scope === parsed.scope) && (proof.scope === undefined || proof.scope === parsed.scope))
+      && (parsed.scope === undefined || (old.scope === undefined || old.scope === parsed.scope) && (proof.scope === undefined || proof.scope === parsed.scope))
       && (parsed.snapshot === undefined || old.snapshot === parsed.snapshot || !raw.path && parsed.scope !== undefined); });
     const actual = canonicalReadPath(input);
     return actual && (Boolean(hostIndexAlias(input)) || [...discovered.keys(), ...advertisedPaths].some(path => !parseRef(path) && canonicalReadPath(path) === actual)
@@ -592,7 +531,7 @@ export function observeGraphGate(api, settings) {
       const reference = unescape(/\bref="([^"]+)"/.exec(match[1])?.[1] ?? ''), selected = resolveMainReference(parseRef(reference));
       const delivered = files.filter(file => file.role === 'entrypoint' && selected?.selector === file.ownerId && selected.path === file.path
         && selected.snapshot === file.snapshot && (selected.scope === undefined || selected.scope === file.scope)
-        && (selected.fileId === undefined || selected.fileId === file.fileId) && copies(match[2], file.content) === 1
+        && copies(match[2], file.content) === 1
         && contents.filter(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256).length === 1
         && hasOwnerDelivery(value, file));
       if (delivered.length === 1) {
@@ -607,7 +546,6 @@ export function observeGraphGate(api, settings) {
       if (!actual || !suppliedRef) continue;
       const matches = files.filter(file => file.actuals.includes(actual) && file.ownerId === suppliedRef.selector
         && file.path === suppliedRef.path && file.snapshot === suppliedRef.snapshot
-        && (suppliedRef.fileId === undefined || suppliedRef.fileId === file.fileId)
         && contents.some(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256));
       if (matches.length !== 1) continue;
       const file = matches[0];
@@ -629,18 +567,14 @@ export function observeGraphGate(api, settings) {
   };
   const fileIdentity = file => ({ scope: file.scope, ownerId: file.ownerId, path: file.path, snapshot: file.snapshot,
     fileId: file.fileId, sha256: file.sha256, bytes: file.bytes });
-  const refMatchesFile = (parsed, file, allowFileAlias = false) => parsed && parsed.selector === file.ownerId
-    && (parsed.path === file.path || allowFileAlias && parsed.fileId !== undefined)
-    && (parsed.scope === undefined || parsed.scope === file.scope)
-    && (parsed.snapshot === undefined || parsed.snapshot === file.snapshot)
-    && (parsed.fileId === undefined || parsed.fileId === file.fileId);
-  const targetFor = (input, body, { expected, selection, includePending = false } = {}) => {
-    const original = parseRef(input), parsed = selection && original
-      ? { ...original, selector: selection.ownerId, scope: selection.scope, path: selection.path }
-      : resolveMainReference(original);
+  const refMatchesFile = (parsed, file) => parsed && parsed.selector === file.ownerId
+    && parsed.path === file.path && (parsed.scope === undefined || parsed.scope === file.scope)
+    && (parsed.snapshot === undefined || parsed.snapshot === file.snapshot);
+  const targetFor = (input, body, { expected, includePending = false } = {}) => {
+    const parsed = resolveMainReference(parseRef(input));
     const alias = parsed ? undefined : hostIndexAlias(input);
     let available = exportedFiles({ includePending });
-    if (parsed) available = available.filter(file => refMatchesFile(parsed, file, true));
+    if (parsed) available = available.filter(file => refMatchesFile(parsed, file));
     else if (alias) available = available.filter(file => file.ref === alias.ref && file.scope === alias.scope && file.ownerId === alias.ownerId
       && file.snapshot === alias.snapshot && file.fileId === alias.fileId && file.path === alias.path && file.sha256 === alias.sha256 && file.bytes === alias.bytes);
     else if (root && [...advertisedPaths].some(path => canonicalReadPath(path) === canonicalReadPath(input))) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
@@ -657,9 +591,8 @@ export function observeGraphGate(api, settings) {
       || Object.keys(input).some(key => !['path', 'offset', 'limit'].includes(key))) return undefined;
     const offset = input.offset ?? 1, limit = input.limit;
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1) return undefined;
-    const claim = resolveSubmittedName(call.claim);
-    if (call.claim?.kind === 'submitted-name' && !claim) return undefined;
-    const source = targetFor(call.input, undefined, { expected: call.expected, selection: call.claim?.kind === 'submitted-name' ? claim : undefined });
+    const claim = call.claim;
+    const source = targetFor(call.input, undefined, { expected: call.expected });
     if (!call.expected && !matchesClaim(claim, source)) return undefined;
     if (!source) return undefined;
     const lines = source.content.split('\n'), start = offset - 1, end = Math.min(start + limit, lines.length);
@@ -680,12 +613,11 @@ export function observeGraphGate(api, settings) {
       const target = wasDiscovered(input) ? targetFor(input, undefined, { includePending: true }) : undefined;
       return target ? fileIdentity(target) : undefined;
     }
-    const available = exportedFiles({ includePending: true }).filter(file => refMatchesFile(parsed, file, true)
+    const available = exportedFiles({ includePending: true }).filter(file => refMatchesFile(parsed, file)
       && [...discovered].some(([ref, proof]) => {
         const prior = resolveMainReference(parseRef(ref));
         return prior && prior.selector === parsed.selector && prior.path === parsed.path
-          && (parsed.fileId === undefined || prior.fileId === parsed.fileId)
-          && refMatchesFile(prior, file, parsed.fileId !== undefined) && (proof.scope === undefined || proof.scope === file.scope);
+          && refMatchesFile(prior, file) && (proof.scope === undefined || proof.scope === file.scope);
       }));
     return available.length === 1 ? fileIdentity(available[0]) : undefined;
   };
@@ -693,14 +625,14 @@ export function observeGraphGate(api, settings) {
     const parsed = resolveMainReference(parseRef(input));
     if (!parsed || !wasDiscovered(input)) return undefined;
     const owners = sourceViews().directories.flatMap(item => (item.value.records ?? []).filter(record => record.id === parsed.selector)
-      .map(record => ({ scope: item.value.scope, ownerId: record.id, path: parsed.path, snapshot: parsed.snapshot, fileId: parsed.fileId })))
+      .map(record => ({ scope: item.value.scope, ownerId: record.id, path: parsed.path, snapshot: parsed.snapshot })))
       .filter(owner => parsed.scope === undefined || parsed.scope === owner.scope);
     const unique = [...new Map(owners.map(owner => [owner.scope + '/' + owner.ownerId, owner])).values()];
     return unique.length === 1 ? unique[0] : undefined;
   };
   const matchesClaim = (claim, file) => claim && file && claim.scope === file.scope && claim.ownerId === file.ownerId
-    && (claim.path === file.path || claim.fileId !== undefined && claim.fileId === file.fileId)
-    && (claim.snapshot === undefined || claim.snapshot === file.snapshot) && (claim.fileId === undefined || claim.fileId === file.fileId);
+    && claim.path === file.path
+    && (claim.snapshot === undefined || claim.snapshot === file.snapshot);
   const metadataCursors = new Map();
   const checkedMetadata = (content, call, details) => {
     const value = JSON.parse(content), outputs = sourceViews();
@@ -753,12 +685,12 @@ export function observeGraphGate(api, settings) {
       if (!node || !file || item.content !== file.content || !refMatchesFile(resolveMainReference(parseRef(item.ref)), file)
         || proof.bodySha256 !== file.sha256
         || proof.bytes !== file.bytes || proof.snapshotId !== file.snapshot || !same(proof.binding, node.binding)
-        || !same(proof.directory?.files, node.files)
+        || !same(proof.directory?.files, directoryFiles(node.files))
         || !['required', 'candidates', 'references'].every(key => same(proof.directory?.[key], node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))))) throw new Error('Prepared main differs from its actual source, manifest or delivery span');
       verifyDirectoryRefs(item.directory, proof.directory);
       const explicitRoot = graph.roots.includes(owner);
       for (const { parsed } of selected.filter(item => item.parsed.selector === owner)) {
-        if (!parsed || parsed.path !== file.path || parsed.scope && parsed.scope !== file.scope || parsed.snapshot && parsed.snapshot !== file.snapshot || parsed.fileId && parsed.fileId !== file.fileId) throw new Error('Prepared main changed an explicit pin or File ID');
+        if (!parsed || parsed.path !== file.path || parsed.scope && parsed.scope !== file.scope || parsed.snapshot && parsed.snapshot !== file.snapshot) throw new Error('Prepared main changed an explicit path or pin');
       }
       return { ...file, preparationProof: { purpose: 'use', explicitRoot,
         roots: selected.map(({ parsed }) => graphs.filter(graph => parsed.scope === undefined || parsed.scope === graph.scope).flatMap(graph => graph.publicReceipt.value.nodes).find(node => node.state === 'prepared' && node.id === parsed.selector).binding.ref),
@@ -842,7 +774,7 @@ export function observeGraphGate(api, settings) {
           ?? /<skill-ref>\s*([^<]+)\s*<\/skill-ref>/.exec(match[2])?.[1]?.trim() ?? '');
         const selected = resolveMainReference(parseRef(reference)), start = match.index + match[0].indexOf('>') + 1;
         return selected?.selector === file.ownerId && selected.path === file.path && selected.snapshot === file.snapshot
-          && (selected.scope === undefined || selected.scope === file.scope) && (selected.fileId === undefined || selected.fileId === file.fileId)
+          && (selected.scope === undefined || selected.scope === file.scope)
           && proof.delivery?.start >= start && proof.delivery.end <= start + match[2].length && copies(match[2], file.content) === 1;
       });
       if (wrappers.length !== 1) return undefined;
@@ -857,18 +789,10 @@ export function observeGraphGate(api, settings) {
     const parsed = resolveMainReference(parseRef(record.ref));
     if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(record.ref) || !parsed || parsed.snapshot !== undefined
       || parsed.selector !== record.id || parsed.scope !== record.scope) return undefined;
-    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-    const visible = '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description><source>'
-      + xml(record.source) + '</source><location>' + record.ref + '</location></skill>';
-    const defaults = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
-      [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === visible));
-    if (record.kind === 'skill' && defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
-    if (record.kind === 'router' && record.source === 'notion') {
-      const visibleRouter = '<router ref="' + record.ref + '"><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description></router>';
-      const routers = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
-        [...block[1].matchAll(/<router\b[^>]*>[\s\S]*?<\/router>/gu)].filter(match => match[0] === visibleRouter));
-      if (routers.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
-    }
+    const defaults = groupedCatalogCards(system).filter(card => card.kind === record.kind && card.name === record.name
+      && card.description === record.description && (card.location === record.ref || card.ref === record.ref)
+      && (record.kind === 'router' ? record.source === 'notion' : card.source === record.source));
+    if (defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
     for (const message of messages) {
       if (message.toolCallId === excludedId) continue;
       let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }
@@ -881,27 +805,43 @@ export function observeGraphGate(api, settings) {
     const refs = [...new Set(originals.map(item => item.ref))];
     return refs.length === 1 ? generatedDescription(messages, { ...record, canonical_ref: refs[0] }, injectionContext) : undefined;
   };
+  const decodeCatalogAttribute = value => unescape(String(value ?? '').replaceAll('&#13;', '\r').replaceAll('&#10;', '\n').replaceAll('&#9;', '\t'));
+  const catalogAttributes = raw => Object.fromEntries([...String(raw ?? '').matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1], decodeCatalogAttribute(match[2])]));
+  const groupedCatalogCards = prompt => [...prompt.matchAll(/<catalog-cards>([\s\S]*?)<\/catalog-cards>/g)].flatMap(block =>
+    [...block[1].matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+      const header = catalogAttributes(group[1]);
+      return [...group[2].matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+        const self = card[1] !== undefined, fields = catalogAttributes(self ? card[1] : card[2]);
+        return { kind: header.kind, name: fields.name, location: fields.location, ref: fields.ref, source: fields.source ?? header.source,
+          description: self ? undefined : unescape(card[3]) };
+      });
+    }));
   const observeCatalog = (prompt, observation, admit = false, visibleMessages = [], injectionContext) => {
-    const skills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => {
-      const file = unescape(match[2].trim());
+    const nativeSkills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => ({
+      name: unescape(match[1].trim()), file: unescape(match[2].trim()), notion: true,
+      description: /<description>([\s\S]*?)<\/description>/.exec(match[0]) ? unescape(/<description>([\s\S]*?)<\/description>/.exec(match[0])[1]) : undefined,
+      sourceId: unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? ''),
+    }));
+    const catalogSkills = groupedCatalogCards(prompt).flatMap(card => card.kind === 'skill' && card.location
+      ? [{ name: card.name, file: card.location, description: card.description, sourceId: card.source ?? '', notion: true }] : []);
+    const skills = [...nativeSkills, ...catalogSkills].map(match => {
+      const file = match.file;
       let provenance = null, sha256 = null;
       const selected = resolveMainReference(parseRef(file));
-      if (selected) {
+      if (selected && match.notion) {
         const matches = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
           .filter(item => item.record.id === selected.selector && item.record.kind === 'skill'
             && settings.parseNativeReference(item.record.ref).path === selected.path && (selected.scope === undefined || selected.scope === item.scope));
         const unique = [...new Map(matches.map(item => [item.scope + '/' + item.record.id, item])).values()];
-        const declared = /<description>([\s\S]*?)<\/description>/.exec(match[0]);
-        const sourceId = unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? '');
         const expected = unique.length === 1 ? { ...unique[0].record, scope: unique[0].scope, ref: file,
-          canonical_ref: unique[0].record.ref, source: sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
-        const reused = declared === null && expected ? generatedDescription(visibleMessages, expected, injectionContext) : undefined;
-        const description = declared ? unescape(declared[1]) : reused?.description;
-        if (expected && unescape(match[1].trim()) === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
+          canonical_ref: unique[0].record.ref, source: match.sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
+        const reused = match.description === undefined && expected ? generatedDescription(visibleMessages, expected, injectionContext) : undefined;
+        const description = match.description !== undefined ? match.description : reused?.description;
+        if (expected && match.name === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
           ownerId: expected.id, scope: expected.scope, ref: expected.canonical_ref, loaded: false, ...(reused ? { descriptionReuse: reused } : {}) };
       }
       try {
-        if (selected) return { name: match[1].trim(), path: file, sha256, provenance };
+        if (selected) return { name: match.name, path: file, sha256, provenance };
         const actual = realpathSync(file), bytes = readFileSync(actual); sha256 = digest(bytes);
         let directory = settings.path.dirname(actual);
         for (let level = 0; level < 6; level++) {
@@ -926,9 +866,24 @@ export function observeGraphGate(api, settings) {
           } catch { directory = settings.path.dirname(directory); }
         }
       } catch { /* An unreadable or unbound catalog path is not a verified Notion advertisement. */ }
-      return { name: match[1].trim(), path: file, sha256, provenance };
+      return { name: match.name, path: file, sha256, provenance };
     });
-    const routers = [...prompt.matchAll(/<router\b[^>]*\bref="([^"]+)"[^>]*>([\s\S]*?)<\/router>/g)].map(match => {
+    const groupedRouters = groupedCatalogCards(prompt).flatMap(card => card.kind === 'router' && card.ref ? [card] : []).map(card => {
+      const ref = card.ref, parsed = resolveMainReference(parseRef(ref));
+      const candidates = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
+        .filter(item => item.record.kind === 'router' && item.record.id === parsed?.selector && settings.parseNativeReference(item.record.ref).path === parsed.path
+          && (parsed.scope === undefined || parsed.scope === item.scope));
+      const unique = [...new Map(candidates.map(item => [item.scope + '/' + item.record.id, item])).values()];
+      const source = unique.length === 1 ? unique[0] : undefined;
+      const name = card.name;
+      const reused = card.description === undefined && source ? generatedDescription(visibleMessages, { ...source.record, scope: source.scope,
+        ref, canonical_ref: source.record.ref, source: settings.sourceId ?? 'notion', availability: source.record.enabled === false ? 'disabled' : 'available' }, injectionContext) : undefined;
+      const description = card.description !== undefined ? card.description : reused?.description;
+      return { ref, ...(source && source.record.name === name && source.record.description === description
+        ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
+          ...(reused ? { descriptionReuse: reused } : {}) } } : {}) };
+    });
+    const legacyRouters = [...prompt.matchAll(/<router\b[^>]*\bref="([^"]+)"[^>]*>([\s\S]*?)<\/router>/g)].map(match => {
       const ref = unescape(match[1]), parsed = resolveMainReference(parseRef(ref));
       const candidates = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
         .filter(item => item.record.kind === 'router' && item.record.id === parsed?.selector && settings.parseNativeReference(item.record.ref).path === parsed.path
@@ -944,6 +899,7 @@ export function observeGraphGate(api, settings) {
         ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
           ...(reused ? { descriptionReuse: reused } : {}) } } : {}) };
     });
+    const routers = [...groupedRouters, ...legacyRouters];
     const state = /<ntn-skills-discovery\b[^>]*\bstatus="([^"]+)"/.exec(prompt)?.[1] ?? 'ready';
     if (admit) {
       for (const skill of skills) if (skill.provenance) { advertisedPaths.add(skill.path); discover(skill.path, 'actual provider catalog'); }
@@ -957,10 +913,17 @@ export function observeGraphGate(api, settings) {
   const restoreRemovedDescriptions = (messages, blocks) => {
     const key = card => JSON.stringify([card.source, card.ref, card.kind, card.name, card.description]);
     const removed = new Map();
-    for (const block of blocks) for (const group of block[0].matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/gu)) {
-      for (const row of group[1].matchAll(/<skill><name>([^<]*)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)) {
-        const card = { kind: 'skill', name: unescape(row[1]), description: unescape(row[2]), source: unescape(row[3]), ref: unescape(row[4]) };
-        if (/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref)) removed.set(key(card), card);
+    for (const block of blocks) {
+      for (const card of groupedCatalogCards(block[0])) {
+        if (card.kind !== 'skill' || card.description === undefined || !card.source || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.location ?? '')) continue;
+        const restoredCard = { kind: 'skill', name: card.name, description: card.description, source: card.source, ref: card.location };
+        removed.set(key(restoredCard), restoredCard);
+      }
+      for (const group of block[0].matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/gu)) {
+        for (const row of group[1].matchAll(/<skill><name>([^<]*)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)) {
+          const restoredCard = { kind: 'skill', name: unescape(row[1]), description: unescape(row[2]), source: unescape(row[3]), ref: unescape(row[4]) };
+          if (/^sr:C[A-Za-z0-9_-]{22}$/u.test(restoredCard.ref)) removed.set(key(restoredCard), restoredCard);
+        }
       }
     }
     const complete = new Set();
@@ -1031,7 +994,8 @@ export function observeGraphGate(api, settings) {
       const marker = experiment.mode === 'on-demand-cards' ? '\n' + discoveryMarker : '';
       const output = experiment.mode === 'full-cards' ? input : input.replace(
         /<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g,
-        block => block.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
+        block => block.replace(/<catalog-cards>[\s\S]*?<\/catalog-cards>/g, '')
+          .replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
           .replace(/<available_routers>[\s\S]*?<\/available_routers>/g, '')) + marker;
       const relocated = experiment.mode === 'on-demand-cards' ? restoreRemovedDescriptions(event.messages, catalogBlocks)
         : { messages: event.messages, restored: [], changedIndexes: new Set() };
@@ -1182,22 +1146,22 @@ export function observeGraphGate(api, settings) {
     for (const part of message.content ?? []) if (part.type === 'toolCall') {
       const input = JSON.parse(JSON.stringify(part.arguments)), selected = part.name === 'read' ? input?.paths ?? input?.path : input;
       const requested = typeof selected?.ref === 'string' ? [selected.ref] : selected?.ref;
-      let nameSelection;
+      let referenceSelection;
       if (part.name === 'read' && typeof selected === 'string') {
         const raw = parseRef(selected), resolved = resolveMainReference(raw), expected = discoveredReadIdentity(selected);
-        const claim = discoveredReadClaim(selected) ?? (expected ? undefined : submittedNameClaim(selected));
-        if (claim?.kind === 'submitted-name' || raw && resolved && raw.selector !== resolved.selector)
-          nameSelection = { expected, claim };
+        const claim = discoveredReadClaim(selected);
+        if (raw && resolved && raw.selector !== resolved.selector)
+          referenceSelection = { expected, claim };
       }
       const selectedRoots = part.name === 'notion_use' && Array.isArray(requested)
         ? requested.map(ref => ({ ref, parsed: resolveMainReference(parseRef(ref)) })) : undefined;
       const discovered = part.name === 'notion_use' ? Array.isArray(requested) && requested.length > 0 && requested.every(ref => wasDiscovered(ref))
-        : part.name === 'read' && (typeof selected === 'string' ? wasDiscovered(selected) || Boolean(nameSelection?.claim)
+        : part.name === 'read' && (typeof selected === 'string' ? wasDiscovered(selected) || Boolean(referenceSelection?.claim)
           : Array.isArray(selected) && selected.length > 0 && selected.every(ref => typeof ref === 'string' && wasDiscovered(ref)));
       const observed = record({ phase: 'authored-tool-call', source: 'assistant-message-end', toolCallId: part.id, tool: part.name, input,
-        argumentsSha256: digest(JSON.stringify(input)), discovered, nameSelection, selectedRoots });
+        argumentsSha256: digest(JSON.stringify(input)), discovered, referenceSelection, selectedRoots });
       assistantCalls.set(part.id, { tool: part.name, input, sequence: observed.sequence, at: observed.at, argumentsSha256: observed.argumentsSha256,
-        nameSelection, selectedRoots });
+        referenceSelection, selectedRoots });
     }
     const value = text(message.content);
     if (value.trim()) record({ phase: 'assistant-final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, text: value, sha256: digest(value), bytes: Buffer.byteLength(value) });
@@ -1223,12 +1187,12 @@ export function observeGraphGate(api, settings) {
       && new Set(batchTargets.map(target => target.fileId ?? target.path)).size === batchTargets.length
       && input.every((ref, index) => targetFor(ref, undefined, { expected: batchTargets[index], includePending: true })?.role === 'resource');
     // Broker may finish source work before this observer's tool_call callback.
-    // Freeze a name's authority at the received model call; new receipts can
+    // Freeze the selected reference authority at the received model call; new receipts can
     // verify that selection, but cannot silently rebind its owner or scope.
-    const expected = authored?.nameSelection ? authored.nameSelection.expected
+    const expected = authored?.referenceSelection ? authored.referenceSelection.expected
       : batch ? batchTargets : event.toolName === 'read' && typeof input === 'string' ? discoveredReadIdentity(input) : undefined;
     const claim = event.toolName === 'read' && typeof input === 'string'
-      ? authored?.nameSelection ? authored.nameSelection.claim : discoveredReadClaim(input) : undefined;
+      ? authored?.referenceSelection ? authored.referenceSelection.claim : discoveredReadClaim(input) : undefined;
     const requested = typeof input?.ref === 'string' ? [input.ref] : input?.ref;
     const selectedRoots = event.toolName === 'notion_use' ? authored?.selectedRoots : undefined;
     const discoveredBefore = event.toolName === 'notion_use'
@@ -1252,12 +1216,12 @@ export function observeGraphGate(api, settings) {
         const views = sourceViews(), records = [...views.directories.flatMap(item => item.value.records ?? []), ...views.entries.map(item => item.value.record)];
         return records.some(record => record.id === parsed.selector && settings.parseNativeReference(record.ref).path === parsed.path && ['skill', 'router'].includes(record.kind));
       });
-    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
+    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && !Object.hasOwn(payload ?? {}, 'readOnly') && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
     const category = !allowed ? 'blocked' : validationAttempt ? 'invalid-short-ref' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : batch ? 'resource-batch' : 'skill';
     const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
     calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
     record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown' });
-    if (!allowed) return { block: true, reason: 'This gate permits owned project reads, advertised Pi help, notion_list, disclosed read/use references, and current-main attempts for complete names in the submitted frozen user request.' };
+    if (!allowed) return { block: true, reason: 'This gate permits owned project reads, advertised Pi help, notion_list and disclosed exact read/use references.' };
   });
   api.on('tool_result', (event, ctx) => {
     refreshContext(ctx);
@@ -1336,14 +1300,34 @@ export function observeGraphGate(api, settings) {
     }
     let body = content, nativeProofError;
     const nativeProof = event.details?.contextBrokerRead;
-    if (nativeProof?.version === 3) {
-      const span = nativeProof.delivery;
-      if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end <= 0 || span.end > content.length) nativeProofError = 'Native main lacks its complete source span';
-      else body = content.slice(0, span.end);
+    const resourceProof = event.details?.contextBrokerResource;
+    const spanProof = nativeProof?.version === 3 ? nativeProof : resourceProof?.version === 2 ? resourceProof : undefined;
+    let suffix = '';
+    try {
+      if (spanProof) {
+        const span = spanProof.delivery;
+        if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end < 0 || span.end > content.length)
+          throw new Error('Native read lacks its complete source span');
+        body = content.slice(0, span.end); suffix = content.slice(span.end);
+        if (event.details.effects !== undefined) {
+          const effects = verifyConsumptionEffects(event.details.effects);
+          const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+          if (!suffix.endsWith(footer)) throw new Error('Native effects differ from the complete disclosed suffix');
+          suffix = suffix.slice(0, -footer.length);
+        }
+      } else if (resourceProof || event.details?.effects !== undefined) throw new Error('Native effects need an observed delivery span');
+      if (resourceProof && (spanProof !== resourceProof || resourceProof.toolCallId !== event.toolCallId
+        || resourceProof.delivered_complete_text !== true || resourceProof.loaded !== false
+        || digest(body) !== resourceProof.sha256 || Buffer.byteLength(body) !== resourceProof.bytes
+        || !['', '\n'].includes(suffix))) throw new Error('Native resource differs from its full source span');
+    } catch (error) { nativeProofError = error.message; }
+    const claim = call?.claim;
+    let target = !nativeProofError && call?.allowed ? targetFor(call.input, body, { expected: call.expected }) : undefined;
+    if (target && resourceProof && (target.role !== 'resource' || resourceProof.id !== target.ownerId || resourceProof.scope !== target.scope
+      || resourceProof.snapshot_id !== target.snapshot || resourceProof.version_id !== target.version || resourceProof.ref !== target.ref
+      || resourceProof.path !== target.path || resourceProof.file_id !== target.fileId)) {
+      nativeProofError = 'Native resource changed its selected owner, snapshot or file'; target = undefined;
     }
-    const claim = resolveSubmittedName(call?.claim);
-    const named = call?.claim?.kind === 'submitted-name';
-    let target = call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
     if (target && !call.expected && !matchesClaim(claim, target)) target = undefined;
     if (target?.role === 'entrypoint' && (settings.sourceMode === 'sdk' || nativeProof)) {
       try {
@@ -1353,11 +1337,11 @@ export function observeGraphGate(api, settings) {
           || nativeProof.snapshotId !== target.snapshot || nativeProof.bodySha256 !== target.sha256 || nativeProof.bytes !== target.bytes
           || !same(nativeProof.binding, node.binding) || nativeProof.loaded === true) throw new Error(nativeProofError ?? 'Native inspection receipt differs from the actual source entry');
         if (nativeProof.version === 3) {
-          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(content.slice(body.length));
+          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
           if (!footer) throw new Error('Native inspection has an unverified footer');
           const model = JSON.parse(footer[1]);
           if (!same(Object.keys(model).sort(), ['directory', 'ref']) || !refMatchesFile(resolveMainReference(parseRef(model.ref)), target)) throw new Error('Native inspection main reference changed');
-          const directory = { files: node.files, ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
+          const directory = { files: directoryFiles(node.files), ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
             node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))])) };
           if (!same(nativeProof.directory, directory)) throw new Error('Native inspection lost the canonical directory');
           verifyDirectoryRefs(model.directory, directory);
@@ -1371,7 +1355,7 @@ export function observeGraphGate(api, settings) {
     }
     const complete = Boolean(target && !event.isError && !event.parentToolCallId && call?.allowed);
     const partialRead = !complete && !event.isError ? verifiedPartialRead(call, content) : undefined;
-    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: nativeProofError ?? (event.isError || !target && !partialRead ? 'native read did not match one complete immutable file' : null), ...(partialRead ? { partialRead } : {}), ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(body), bytes: Buffer.byteLength(body), role: target.role, path: target.path, fileId: target.fileId, content: body, ...(named ? { nameResolution: claim.nameResolution } : {}) } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
+    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: nativeProofError ?? (event.isError || !target && !partialRead ? 'native read did not match one complete immutable file' : null), ...(partialRead ? { partialRead } : {}), ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(body), bytes: Buffer.byteLength(body), role: target.role, path: target.path, fileId: target.fileId, content: body } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
     if (partialRead) deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
     if (complete) {
       discover(body, 'successful native read', target, bindHostIndex(call.input, target));
@@ -1386,7 +1370,7 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'modelContract', 'thinkingLevel', 'rpcTimeoutMs', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'library', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'modelContract', 'thinkingLevel', 'rpcTimeoutMs', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
   const modelProfile = dailyRouteContract(input);
@@ -1396,7 +1380,7 @@ export async function readGateConfig(path) {
   const prompt = frozenPrompt(input.gate, input.selection);
   assert.match(input.rootRef ?? '', /^skill:\/\/[^/?#]+\/(?:SKILL|ROUTER)\.md$/);
   assert.equal(input.rootRef.endsWith('/ROUTER.md'), input.gate === 'A', 'Gate A selects a Router; Gate B selects a Skill');
-  assert.match(input.database ?? '', /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
+  assert.match(input.library ?? '', /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
   assert.ok(Boolean(input.viewId) !== Boolean(input.profileId), 'Select exactly one existing root-only View or Profile');
   if (input.viewId) assert.match(input.viewId, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
   if (input.profileId) assert.match(input.profileId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/);
@@ -1434,7 +1418,7 @@ export async function readGateConfig(path) {
   return { ...input, sourceMode, model, mode, promptTimeoutMs, previousFailures, ...(modelProfile ? { modelProfile } : {}), ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
 }
 
-export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
+export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), library: config.library, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
 export async function sourceObserver(control, { ledger, responses, outputRoot, cliEntries }) {
   const file = join(control, 'source-observer.mjs');
   const module = pathToFileURL(fileURLToPath(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url))).href;
@@ -1452,7 +1436,7 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   return env;
 }
 
-export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, library: config.library, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function graphFailureEvidence(error, samples = []) {
   const validationError = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
@@ -1560,6 +1544,8 @@ export async function graphSelectionPreflight(config) {
   await mkdir(payloads);
   await Promise.all([ledger, owned, provider, output].map(path => writeFile(path, '', { mode: 0o600 })));
   const cliPaths = sourceEnvironment(cli, config.modelProfile), state = join(control, 'source.json'), brokerConfig = join(control, 'broker.json');
+  await mkdir(cliPaths.NTN_SKILLS_CONFIG_HOME, { recursive: true });
+  await save(join(cliPaths.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   await save(state, { command: config.cliCommand, cliPaths, ledger, responses, metadataOnly: true });
   await save(brokerConfig, brokerConfiguration(config, [process.execPath, helper, '--source', state], broker));
   await save(join(evidence, 'source-config.json'), await json(brokerConfig));
@@ -1569,7 +1555,7 @@ export async function graphSelectionPreflight(config) {
   const observer = join(control, 'catalog-observer.mjs');
   await writeFile(observer, graphObserverModule({ sourceMode: config.sourceMode ?? 'sdk', rootRef: config.rootRef, model: controlled.model,
     prompt: prompts[0], cache: broker, cwd, responses, output, payloads, piExecutable: (await resolveHost('pi')).identity }, pathToFileURL(join(dirname(artifacts.extension.path), 'native-reference.ts')).href), { mode: 0o600 });
-  const result = { version: 1, sourceMode: config.sourceMode ?? 'sdk', status: 'running', kind: 'installed-pi-selection-preflight', evidence, scratch, rootRef: config.rootRef, database: config.database, viewId: config.viewId, profileId: config.profileId, artifacts, cliSha256: hash(await readFile(config.cliCommand[1])), files: ['result.json', 'source-config.json', 'source-processes.jsonl', 'owned-processes.jsonl', 'catalog-provider-http.jsonl', 'catalog-observer.jsonl', 'ownership.json'], scope: 'Actual installed Pi commands, ordinary metadata-only turns and real Notion metadata; controlled local provider only, independent of the private oracle and the later cold consumer' };
+  const result = { version: 1, sourceMode: config.sourceMode ?? 'sdk', status: 'running', kind: 'installed-pi-selection-preflight', evidence, scratch, rootRef: config.rootRef, library: config.library, viewId: config.viewId, profileId: config.profileId, artifacts, cliSha256: hash(await readFile(config.cliCommand[1])), files: ['result.json', 'source-config.json', 'source-processes.jsonl', 'owned-processes.jsonl', 'catalog-provider-http.jsonl', 'catalog-observer.jsonl', 'ownership.json'], scope: 'Actual installed Pi commands, ordinary metadata-only turns and real Notion metadata; controlled local provider only, independent of the private oracle and the later cold consumer' };
   await save(join(scratch, 'ownership.json'), { evidence, purpose: 'native-graph-selection', runId: randomUUID() });
   await save(join(evidence, 'ownership.json'), await json(join(scratch, 'ownership.json')));
   await save(join(evidence, 'result.json'), result);
@@ -1581,7 +1567,7 @@ export async function graphSelectionPreflight(config) {
     for (const prompt of prompts) await rpc.prompt(prompt);
     controlled.assertComplete();
     result.defaultDiscovery = verifyCatalogProvider(await rows(output), await rows(provider), config);
-    const id = decodeURIComponent(config.rootRef.split('/')[2]);
+    const id = parseNativeReference(config.rootRef).selector;
     let record;
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline && !record) {
@@ -1735,33 +1721,10 @@ export function graphSourceAttribution({ observation, responses, sourceLedger, o
         : authored.input?.path !== call.input : JSON.stringify(authored.input) !== JSON.stringify(call.input))
       || owner.snapshot !== undefined && read.snapshot !== owner.snapshot) return admittedAt;
     if (call.tool === 'read') {
-      let fileId = read.fileId;
-      try { fileId ??= new URL(read.ref).searchParams.get('file_id') ?? undefined; } catch { return admittedAt; }
+      const fileId = read.fileId;
       const expected = Array.isArray(call.expected) ? call.expected[read.resourceBatchProof?.index] : call.expected;
       let claim = call.claim;
-      if (authored.nameSelection && JSON.stringify(authored.nameSelection) !== JSON.stringify({ expected, claim })) return admittedAt;
-      if (claim?.kind === 'submitted-name') {
-        const proof = read.nameResolution, provider = observation.find(event => event.phase === 'provider-request' && event.sequence === claim.promptSequence);
-        const catalogs = sourceViews.directories.filter(item => item.requestId === proof?.selectionRequestId && item.facet !== 'directory');
-        if (sourceViews.directoryFailures.some(item => item.requestId === proof?.selectionRequestId)) return admittedAt;
-        const catalog = catalogs.length === 1 ? catalogs[0].value : undefined;
-        const records = catalog?.records?.filter(record => record.enabled !== false && [record.name, record.alias].includes(claim.selector));
-        const sources = sourceViews.entries.filter(item => item.requestId === proof?.readRequestId);
-        const source = sources.length === 1 ? sources[0] : undefined;
-        if (!authored.nameSelection || !proof || proof.selector !== claim.selector || proof.promptSha256 !== claim.promptSha256
-          || proof.promptSequence !== claim.promptSequence || !provider || provider.sequence >= authored.sequence
-          || provider.observedPayloadSha256 !== claim.providerPayloadSha256 || !provider.sourceTextHashes?.some(item => item.sha256 === claim.promptSha256)
-          || !catalog || catalog.scope !== read.scope || catalog.count !== catalog.records.length || records.length !== 1
-          || catalog.coverage?.exhaustive !== true || catalog.coverage.search_index_limited !== false || catalog.coverage.failed_sources?.length !== 0
-          || catalog.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in catalog)
-          || new Set(catalog.records.map(record => record.id)).size !== catalog.records.length
-          || records[0].id !== read.ownerId || records[0].entrypoint !== read.path || claim.path && claim.path !== read.path
-          || !source || source.value.scope !== read.scope || source.value.record.id !== read.ownerId || source.value.path !== read.path
-          || source.value.snapshot_id !== read.snapshot || typeof source.value.content !== 'string'
-          || hash(source.value.content) !== read.sha256 || Buffer.byteLength(source.value.content) !== read.bytes
-          || source.operation !== 'read' && !sourceViews.preparations.some(item => item.requestId === source.requestId && item.value.purpose === 'inspect')) return admittedAt;
-        claim = { scope: catalog.scope, ownerId: records[0].id, path: records[0].entrypoint };
-      }
+      if (authored.referenceSelection && JSON.stringify(authored.referenceSelection) !== JSON.stringify({ expected, claim })) return admittedAt;
       if (expected ? expected.scope !== read.scope || expected.ownerId !== read.ownerId || expected.path !== read.path
         || expected.snapshot !== read.snapshot || expected.fileId !== fileId || expected.sha256 !== read.sha256 || expected.bytes !== read.bytes
         : !claim || claim.scope !== read.scope || claim.ownerId !== read.ownerId || claim.path !== read.path
@@ -1831,9 +1794,9 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
         : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
     assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
   }
-  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
+  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === parseNativeReference(oracle.roots.B.ref).selector), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
   const actualPrepare = graphSourceViews(responses).preparations.filter(item => item.value.status === 'ready').map(item => item.value);
-  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === decodeURIComponent(config.rootRef.split('/')[2])));
+  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === parseNativeReference(config.rootRef).selector));
   assert.ok(rootPreparation, 'The selected root must use the actual SDK consume or explicit command preparation');
   const selected = rootPreparation.nodes.filter(node => node.state === 'prepared');
   assert.ok(!selected.some(node => node.id === oracle.target.logicalId), 'The optional target cannot be silently promoted into the required closure');
@@ -1938,7 +1901,7 @@ async function runGate(config) {
   assert.ok(config.selectionReceipt, 'Run the public metadata-only selection preflight first');
   const selection = await json(config.selectionReceipt);
   assert.equal(selection.status, 'passed'); assert.equal(selection.kind, 'installed-pi-selection-preflight');
-  assert.equal(selection.selection, config.selection); assert.equal(selection.rootRef, config.rootRef); assert.equal(selection.database, config.database); assert.equal(selection.viewId, config.viewId); assert.equal(selection.profileId, config.profileId);
+  assert.equal(selection.selection, config.selection); assert.equal(selection.rootRef, config.rootRef); assert.equal(selection.library, config.library); assert.equal(selection.viewId, config.viewId); assert.equal(selection.profileId, config.profileId);
   assert.equal(selection.artifacts.extension.sha256, doctor.extension.sha256); assert.equal(selection.cliSha256, doctor.cli.sha256, 'Selection preflight must use the same installed artifacts');
   assert.equal(selection.artifacts.package.sha256, doctor.package.sha256, 'Selection preflight must use the selected package archive');
   assert.equal(selection.artifacts.runtimeSha256, doctor.runtimeSha256, 'Selection preflight must use the same complete installed runtime');
@@ -1985,6 +1948,8 @@ async function runGate(config) {
   const ledger = join(evidence, 'source-processes.jsonl'), owned = join(evidence, 'owned-processes.jsonl'), output = join(evidence, 'observer.jsonl');
   await Promise.all([ledger, owned, output].map(path => writeFile(path, '', { mode: 0o600 })));
   const cliPaths = sourceEnvironment(resolved[0], config.modelProfile);
+  await mkdir(cliPaths.NTN_SKILLS_CONFIG_HOME, { recursive: true });
+  await save(join(cliPaths.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   const statePath = join(control, 'source.json');
   await save(statePath, { command: config.cliCommand, cliPaths, ledger, responses });
   const brokerConfig = join(control, 'broker.json');
@@ -2204,7 +2169,7 @@ async function main(args) {
   const action = args.shift();
   if (!action || action === '--help' || action === 'help') return {
     usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --review ABSOLUTE_PRIVATE_REVIEW', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN_OR_EXERCISE'],
-    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID', sourceMode: 'sdk (default, source.command absent); command explicitly selects the legacy/custom/profile comparison', profileId: 'legacy compatibility only, requires sourceMode command instead of viewId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry; identity and explicit command mode only'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
+    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', library: 'UUID', viewId: 'existing root-only View UUID', sourceMode: 'sdk (default, source.command absent); command explicitly selects the legacy/custom/profile comparison', profileId: 'legacy compatibility only, requires sourceMode command instead of viewId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry; identity and explicit command mode only'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
     consumption: 'Pi 1.4 advertises read, notion_list and notion_use. notion_use is model-only; inspection and resources use read. notion_ctl stays deferred and is not activated for the A/B plan task. Actual SDK results and their matching HTTP metrics are observer-only evidence; roots and Requires still require complete source bytes in actual provider requests. The driver does not claim live or independent acceptance merely because its tests pass.',
     discovery: 'selection uses its own cold scratch, real Notion metadata, actual Pi and three controlled local HTTP provider requests: one public notion_list followed by a second ordinary user turn with ready default metadata. No instruction bodies or real model are requested. Setup attempts/bytes remain a separate ledger. The later task can observe first-turn pending; explicit root consumption never substitutes for the independent ready-directory proof.',
     promptTimeout: 'Optional config.promptTimeoutMs freezes the model-run RPC deadline before launch; default 300000 ms, positive safe timer integer up to 2147483647. The value is retained in doctor/run/matrix/cache evidence and the cache fingerprint. It never changes task or graph assertions.',
@@ -2213,7 +2178,7 @@ async function main(args) {
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise --command-json records only an existing-project-check. exercise --review binds an independent private review to the full files, original result, exact Node invocation and finite budget, then runs that helper in a separate owned project copy. Evidence and cleanup accept its separate evidence root. Completion is execution evidence, with feature and semantic acceptance still independently reviewed; failed model prerequisites remain blocked.',
     retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
-    oracleIdentity: 'Target logicalId is the full public record.id (shared_skill:library:skill_id); resource logicalId is its observed stable file_id (fallback owner/path only for historical snapshots without file IDs). All refs are canonical actual read refs including snapshot and available file_id.',
+    oracleIdentity: 'Target logicalId is the complete canonical root Skill URI. Resource logicalId is its verified native file_id, or the owner/path for a frozen Source file without a File row. Public refs contain the exact owner, path and snapshot; File bindings remain internal manifest evidence.',
   };
   if (action === '--source') { await sourceCommand(args.shift(), args); return; }
   const options = {};

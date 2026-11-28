@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
-import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
+import { assertCatalogCancellationBoundary } from './notion-sdk-observers.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 import { dailyRouteContract, verifyDailyRouteState, verifyDailyRouteEvidence } from './verify-skill-graph-contract.mjs';
 
@@ -395,7 +395,7 @@ export function assertDiscoveryProjection({ observation, experiment }) {
       assert.equal(proof.outputSection, proof.inputSection, 'Full cards are byte-exact');
       assert.equal(proof.outputMessagesSha256, proof.inputMessagesSha256); assert.equal(proof.markerBytes, 0);
     } else {
-      assert.ok(!/<(?:skill|router)\b/.test(proof.outputSection), 'On-demand output cannot retain default cards');
+      assert.ok(!/<catalog-cards\b|<card\b|<(?:skill|router)\b/.test(proof.outputSection), 'On-demand output cannot retain default cards');
       assert.ok(proof.outputSection.endsWith('Notion cards are on demand; discover them with notion_list.'));
       assert.equal(proof.markerBytes, Buffer.byteLength('\nNotion cards are on demand; discover them with notion_list.'));
     }
@@ -644,7 +644,7 @@ export async function runIntentCases(configPath, selectedCase) {
     assert.ok(!scratch.startsWith(oracleRoot + '/') && !oracleRoot.startsWith(scratch + '/'), 'Private oracle cannot warm a consumer root');
     const project = await createOwnedGraphProject(cwd, { modelProfile }); assert.equal(project.sha256, config.project.sha256);
     await Promise.all([ledger, owned, observationPath].map(path => writeFile(path, '', { mode: 0o600 })));
-    const source = { type: 'notion', id: 'notion', namespace: 'notion', database: config.source.database,
+    const source = { type: 'notion', id: 'notion', namespace: 'notion', library: config.source.library,
       prefetch: false, cacheDir: cache, requestTimeoutMs: 60000 };
     const brokerConfig = join(control, 'broker.json'); await save(brokerConfig, { skillRoots: [], extraSkillRoots: [], sources: [source] });
     await save(join(output, 'source-config.json'), await json(brokerConfig));
@@ -1171,7 +1171,7 @@ export async function runMatrix(options) {
     const cliExistedBeforeHost = await access(cliRoot).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
     await mkdir(cache, { recursive: true, mode: 0o700 }); const brokerEntriesBeforeHost = (await readdir(cache)).length; await mkdir(sessionDir, { recursive: true, mode: 0o700 });
     const config = join(base, 'broker-' + phase + '.json');
-    await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database: fixture.database, default_view_id: fixture.view, prefetch: false, cacheDir: cache, requestTimeoutMs: 30000, ...(maxAge ? { activation: { maxAge }, discovery: { maxAge } } : {}) }] });
+    await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, library: fixture.library_id, default_view_id: fixture.view, prefetch: false, cacheDir: cache, requestTimeoutMs: 30000, ...(maxAge ? { activation: { maxAge }, discovery: { maxAge } } : {}) }] });
     const capture = join(evidence, name + '-observer.jsonl');
     await writeFile(capture, '', { mode: 0o600 });
     const graphCapture = join(evidence, name + '-public-tool-observer.jsonl'); await writeFile(graphCapture, '', { mode: 0o600 });
@@ -1183,7 +1183,7 @@ export async function runMatrix(options) {
     const graphSettings = { sourceMode: 'command', model: options.model, rootRef: selected.ref, cache: settings.cache, cwd: base, responses: publicResponses, output: graphCapture, toolSurfaceFile: surfaceFile, piExecutable };
     const graphObserver = join(base, 'public-tool-observer-' + phase + '.mjs');
     await writeFile(graphObserver, graphObserverModule(graphSettings, pathToFileURL(join(dirname(options.extension), 'native-reference.ts')).href), { mode: 0o600 });
-    await writeFile(observer, `import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';import observePublicTools from ${JSON.stringify(pathToFileURL(graphObserver).href)};export default api=>{const piHelpBoundary=(${createPiHelpBoundary.toString()})({fs,path,crypto,executable:${JSON.stringify(piExecutable)}});observePublicTools(api);(${observe.toString()})(api,{...${JSON.stringify(settings)},fs,crypto,path,piHelpBoundary});};\n`, { mode: 0o600 });
+    await writeFile(observer, `import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';import {parseNativeReference,nativeFileRef,bindNativeReference,nativeReferenceLibrary} from ${JSON.stringify(pathToFileURL(join(dirname(options.extension), 'native-reference.ts')).href)};import observePublicTools from ${JSON.stringify(pathToFileURL(graphObserver).href)};export default api=>{const piHelpBoundary=(${createPiHelpBoundary.toString()})({fs,path,crypto,executable:${JSON.stringify(piExecutable)}});observePublicTools(api);(${observe.toString()})(api,{...${JSON.stringify(settings)},fs,crypto,path,piHelpBoundary,parseNativeReference,nativeFileRef,bindNativeReference,nativeReferenceLibrary});};\n`, { mode: 0o600 });
     const env = { ...verificationCliEnvironment(cliRoot), CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(evidence, name + '-decisions.jsonl'), BROKER_E2E_PROCESS_LEDGER: ledgerFile };
     const args = ['--no-extensions', '--no-skills', '--session-dir', sessionDir, '--no-mcp', '--no-context-files', '--no-prompt-templates', '--tools', 'read,notion_list,notion_use', '-e', options.extension, '-e', observer, '--model', options.model, ...(session ? ['--session', session] : [])];
     const startupAt = Date.now();

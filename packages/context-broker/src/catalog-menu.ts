@@ -12,6 +12,22 @@ export function notionListExpired(observation: NotionListObservation | undefined
   return !Number.isFinite(observation.ageMs) || observation.ageMs < 0 || now < validated || Math.max(observation.ageMs, now - validated) >= observation.maxAgeMs;
 }
 
+/** Public age advances from the original SDK observation; reading never renews it. */
+export function notionListFreshness(observation: NotionListObservation | undefined, now: number) {
+  const validated = observation?.validatedAt === undefined ? NaN : Date.parse(observation.validatedAt);
+  const age = observation?.ageMs;
+  const known = Number.isFinite(validated) && now >= validated && age !== undefined && Number.isFinite(age) && age >= 0;
+  const currentAge = known ? Math.max(age, now - validated) : null;
+  return {
+    policy: observation?.policy ?? null,
+    validated_at: observation?.validatedAt ?? null,
+    age_ms: currentAge,
+    max_age_ms: observation?.maxAgeMs ?? null,
+    stale: observation?.stale === true ? true : currentAge !== null && observation?.maxAgeMs !== undefined
+      ? currentAge >= observation.maxAgeMs : null,
+  };
+}
+
 export function notionCatalogAction(input: {
   offline: boolean;
   sourceIds: string[];

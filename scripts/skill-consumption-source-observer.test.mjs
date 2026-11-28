@@ -9,10 +9,43 @@ import { errorMonitor } from 'node:events';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { safeRequestMetrics } from './notion-default-context.mjs';
-import { observeSourceTransport, sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { observeSourceTransport, sourceObserverPreloadSource, readSourceObservation, captureSourceProcessAncestry } from './skill-consumption-source-observer.mjs';
 import { settleSource } from './skill-consumption-model-baseline.mjs';
 
 const secret = 'private-source-marker', privateUrl = 'https://private.example/secret-source';
+
+test('OS ancestry requests only selected PID relationships and confirms their unchanged start identity', () => {
+  const calls = [];
+  const execFileSync = (file, args, options) => {
+    assert.equal(file, '/bin/ps'); assert.deepEqual(args.slice(0, -1), ['-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=', '-p']);
+    assert.equal(options.env.LC_ALL, 'C'); assert.equal(options.env.TZ, 'UTC');
+    const pids = args.at(-1).split(',').map(Number); calls.push(pids);
+    return pids.map(pid => pid + ' ' + (pid === process.pid ? process.ppid : 1) + ' Sat Nov 21 12:00:00 2026').join('\n') + '\n';
+  };
+  const observed = captureSourceProcessAncestry({ execFileSync, stopPid: process.ppid, platform: 'darwin' });
+  assert.equal(observed.complete, true);
+  assert.deepEqual(calls, [[process.pid], [process.ppid], [process.pid, process.ppid]]);
+  assert.equal(observed.samples.length, 2);
+  assert.ok(BigInt(observed.finishedNs) >= BigInt(observed.startedNs));
+});
+
+test('unsupported, failed and unstable OS ancestry captures retain an explicit unknown result', () => {
+  const unsupported = captureSourceProcessAncestry({ platform: 'win32', stopPid: process.ppid,
+    execFileSync() { throw new Error('The unsupported platform must not run ps'); } });
+  assert.equal(unsupported.complete, false); assert.equal(unsupported.reason, 'unsupported-platform');
+  const failed = captureSourceProcessAncestry({ platform: 'linux', stopPid: process.ppid,
+    execFileSync() { throw new Error('private argument must not enter evidence'); } });
+  assert.equal(failed.complete, false); assert.equal(failed.reason, 'os-query-failed');
+  assert.equal(JSON.stringify(failed).includes('private argument'), false);
+  const changed = captureSourceProcessAncestry({ platform: 'darwin', stopPid: process.ppid,
+    execFileSync(_file, args) {
+      const pids = args.at(-1).split(',').map(Number);
+      return pids.map(pid => pid + ' ' + (pid === process.pid ? process.ppid : 1)
+        + (pids.length > 1 ? ' Sat Nov 21 12:00:01 2026' : ' Sat Nov 21 12:00:00 2026')).join('\n') + '\n';
+    } });
+  assert.equal(changed.complete, false); assert.equal(changed.reason, 'ancestor-identity-changed');
+});
+
 function requestMetrics() {
   const attempt = (number, status, responseBytes) => ({ event: 'attempt', attempt: number, kind: 'notion_metadata', method: 'POST',
     started_ms: number * 10, duration_ms: 4, outcome: status === 200 ? 'success' : 'failure',
@@ -103,7 +136,7 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   publishSdk(zero, 'end', { elapsed_ms: 0, status: 'completed', sdk_started: true, metrics_observed: true,
     request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
   publishSdk(failure, 'start');
-  publishSdk(failure, 'end', { elapsed_ms: 3, status: 'failed', sdk_started: false, metrics_observed: false, request_metrics: null });
+  publishSdk(failure, 'end', { elapsed_ms: 3, status: 'failed', error_code: 'STATE_UNAVAILABLE', sdk_started: false, metrics_observed: false, request_metrics: null });
   publishSdk(pending, 'start'); observer.finish();
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, false); assert.deepEqual(trace.errors, []);
@@ -111,11 +144,51 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   assert.equal(metric(zero).total_requests, 0); assert.equal(metric(zero).complete, true);
   assert.equal(metric(failure).total_requests, null); assert.equal(metric(failure).observed, false);
   assert.equal(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(failure)).status, 'failed');
+  assert.equal(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(failure)).errorCode, 'STATE_UNAVAILABLE');
+  assert.equal(Object.hasOwn(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(zero)), 'errorCode'), false);
   assert.deepEqual(trace.events.at(-1).pendingRequestIds, ['sdk:' + process.pid + ':' + pending]);
   assert.equal(trace.events.at(-1).sdkStarts, 3); assert.equal(trace.events.at(-1).cliStarts, 0);
 });
 
-for (const operation of ['list', 'files', 'read-resources']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+test('SDK routing attribution is retained exactly and never inferred when absent', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const cases = [{ source_id: 'notion-eu', library: '01234567-89ab-cdef-0123-456789abcdef' }, { source_id: null, library: null }, {}];
+  const ids = [];
+  for (const attribution of cases) {
+    const id = crypto.randomUUID(); ids.push(id);
+    publishSdk(id, 'start', { operation: 'list', ...attribution, credential: secret });
+    publishSdk(id, 'end', { operation: 'list', ...attribution, elapsed_ms: 1, status: 'completed', sdk_started: true,
+      metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
+  }
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true);
+  for (const [index, id] of ids.entries()) for (const row of trace.events.filter(row => ['started', 'completed'].includes(row.phase) && row.requestId.endsWith(id))) {
+    assert.deepEqual(Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), cases[index]);
+  }
+  assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
+  const changed = reseal(trace.events.map(row => row.phase === 'completed' && row.requestId.endsWith(ids[0]) ? { ...row, source_id: 'different-source' } : row));
+  const file = path.join(item.base, 'changed-source.jsonl');
+  fs.writeFileSync(file, changed.map(row => JSON.stringify(row)).join('\n') + '\n');
+  const replay = await readSourceObservation(file);
+  assert.equal(replay.complete, false);
+  assert.ok(replay.errors.includes('changed-sdk-source-attribution'));
+});
+
+test('contradictory SDK source attribution remains an observation error', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), library = '01234567-89ab-cdef-0123-456789abcdef';
+  publishSdk(id, 'start', { source_id: 'source-a', library });
+  publishSdk(id, 'end', { source_id: 'source-b', library, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, false);
+  assert.equal(trace.events.filter(row => row.phase === 'completed').length, 0);
+  assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 1);
+});
+
+for (const operation of ['library-selection', 'library', 'list', 'source-members', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });
@@ -126,6 +199,39 @@ for (const operation of ['list', 'files', 'read-resources']) test('one ' + opera
   assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
   assert.equal(trace.events.at(-1).sdkStarts, 1); assert.equal(trace.events.at(-1).operations, 1);
   assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), [operation, operation]);
+  assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 2);
+  assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
+});
+
+test('candidate snapshots retain exact local SDK attribution and zero-request metrics without candidate bodies', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'candidates', source_id = 'source-a';
+  const library = '01234567-89ab-cdef-0123-456789abcdef';
+  publishSdk(id, 'start', { operation, source_id, library, candidates: [{ body: secret, url: privateUrl }] });
+  publishSdk(id, 'end', { operation, source_id, library, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [], credentials: secret } });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase))
+    .map(row => ({ operation: row.operation, source_id: row.source_id, library: row.library })),
+  [{ operation, source_id, library }, { operation, source_id, library }]);
+  assert.equal(trace.events.filter(row => ['attempt', 'wait'].includes(row.phase)).length, 0);
+  const metrics = trace.events.find(row => row.phase === 'metrics');
+  assert.equal(metrics.observed, true); assert.equal(metrics.complete, true); assert.equal(metrics.total_requests, 0);
+  const saved = fs.readFileSync(item.output, 'utf8');
+  assert.equal(saved.includes(secret), false); assert.equal(saved.includes(privateUrl), false);
+});
+
+test('candidate HTTP remains observed evidence instead of being hidden as a local zero-request result', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'candidates';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 4, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: requestMetrics() });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
   assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 2);
   assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
 });
@@ -142,6 +248,20 @@ test('an unknown SDK operation remains an observation error instead of a complet
   assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 2);
   assert.equal(trace.events.at(-1).errors, 2);
   assert.equal(trace.events.filter(row => row.phase === 'metrics').length, 0);
+});
+
+test('content-search lifecycle is observed while unmeasured MCP HTTP stays unknown', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'content-search';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: false, request_metrics: null });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), [operation, operation]);
+  const metrics = trace.events.find(row => row.phase === 'metrics');
+  assert.equal(metrics.observed, false); assert.equal(metrics.complete, false); assert.equal(metrics.total_requests, null);
 });
 
 test('evidence write failure cannot escape a source event or change host exit behavior', async () => {
@@ -364,4 +484,25 @@ test('legacy unmatched starts remain readable without inventing lifecycle receip
   const actual=await readSourceObservation(file);
   assert.equal(actual.complete,true);assert.deepEqual(actual.errors,[]);assert.equal(actual.unmatchedChildLifecycle,null);
   assert.equal(actual.events.at(-1).unmatchedChildren,1);
+});
+
+
+test('directory inventory proof is attached to the actual passive child ledger without changing output or privacy', async t => {
+  const { captureDirectoryInventorySpawn } = await import('./notion-agent-inventory-evidence.mjs');
+  const item = fixture(), cwd = fs.realpathSync(item.base), env = { PATH: '/bin:/usr/bin', SOURCE_TEST_SECRET: secret };
+  const expected = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  const original = cp.spawn, observer = observe(item, { captureDirectoryInventorySpawn }); t.after(observer.finish);
+  const actual = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env: { ...env, BASH_ENV: '/unreviewed/startup' } }).closed;
+  observer.finish();
+  assert.deepEqual(actual, expected); assert.equal(cp.spawn, original);
+  const trace = await readSourceObservation(item.output), starts = trace.events.filter(row => row.phase === 'unmatched_child_start');
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []); assert.equal(starts.length, 2);
+  assert.equal(starts[0].directoryInventory.kind, 'bounded-directory-inventory');
+  assert.equal(starts[0].directoryInventory.cwd, cwd);
+  assert.equal(starts[1].directoryInventory, undefined);
+  const close = trace.events.find(row => row.phase === 'unmatched_child_close' && row.childId === starts[0].childId);
+  assert.equal(close.directoryInventoryUnchanged, true);
+  assert.equal(starts[0].transport, 'unknown');
+  assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
 });

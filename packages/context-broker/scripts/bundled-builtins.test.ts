@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -11,6 +11,7 @@ import { buildCliGuidance, buildDollarRegistry, buildRawDollarRegistry, buildReg
 import { skillRecordFromFile } from "../src/skill-records";
 import { discoverSources, loadSourceSkill } from "../src/sources";
 import type { ConfigFile, SkillRecord } from "../src/types";
+import { preserveTemp } from "./context-broker-e2e-fixture.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "broker-bundled-"));
 try {
@@ -41,7 +42,7 @@ try {
 
   // A bundled file remains readable offline, but it must not be offered as a
   // Notion workflow until an enabled Notion source opts into that feature.
-  const disabledNotion: ConfigFile = { sources: [{ type: "notion", id: "disabled-notion", enabled: false, command: join(root, "missing-cli") }] };
+  const disabledNotion: ConfigFile = { sources: [{ type: "notion", id: "disabled-notion", enabled: false }] };
   for (const inactive of [{}, { sources: [] }, config, disabledNotion] satisfies ConfigFile[]) {
     assert.deepEqual(configuredBundledBuiltinRecords(inactive), [], "No enabled Notion source means no bundled candidates");
     const standard = await buildRegistry({ ...inactive, requireAutoload: false });
@@ -59,7 +60,7 @@ try {
   assert.ok(filesystemOnly.records.some(record => record.sourceId === "user-source" && record.name === "ntn-skills-maintain"),
     "Hiding packaged Notion workflows must not hide a user-owned, same-name filesystem source");
 
-  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", command: join(root, "missing-cli") }] };
+  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] };
   assert.equal(configuredBundledBuiltinRecords(awaitingConnection).length, 3, "Configured Notion enables offline setup workflows even without credentials");
   const unconnected = await buildDollarRegistry(awaitingConnection, root);
   assert.equal(unconnected.records.filter(isBundledBuiltin).length, 3);
@@ -73,8 +74,9 @@ try {
   const configured = await discoverSources(config, root);
   const remote: SkillRecord = {
     ...target, source: "notion", sourceId: "remote",
-    id: "notion_page:11111111-1111-4111-8111-111111111111",
-    locator: { type: "notion_page", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" },
+    id: "skill://maintain?library=00134658-9358-58ee-8efb-37ceff5ad74c", enabled: true,
+    ref: "skill://maintain/SKILL.md?library=00134658-9358-58ee-8efb-37ceff5ad74c",
+    locator: { type: "shared_skill", library_id: "00134658-9358-58ee-8efb-37ceff5ad74c", skill_id: "maintain", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" },
     path: "", body: undefined,
     token: "builtin/ntn-skills-maintain",
     selectionToken: "ntn-skills-maintain@builtin",
@@ -96,17 +98,17 @@ try {
   assert.equal(matchDiscoveryRecord("not-a-skill", registry).decision, "skip");
 
   const guidance = buildCliGuidance({ sources: [
-    { type: "notion", id: "first", command: ["first-cli", "--profile", "one"], database: "one" },
-    { type: "notion", id: "second", command: ["second-cli", "--profile", "two"], database: "two" },
+    { type: "notion", id: "first", library: "00000000-0000-4000-8000-000000000101" },
+    { type: "notion", id: "second", library: "00000000-0000-4000-8000-000000000102" },
   ] });
   const content = String(guidance.content);
   assert.match(content, /source="first"/);
   assert.match(content, /source="second"/);
-  assert.match(content, /first-cli/);
-  assert.match(content, /second-cli/);
+  assert.match(content, /library="00000000-0000-4000-8000-000000000101"/);
+  assert.match(content, /library="00000000-0000-4000-8000-000000000102"/);
   assert.match(content, /never choose the first source implicitly/);
 
   console.log("bundled builtin checks passed: Notion opt-in gates all discovery and detached completion, disconnected setup still works, offline files/resources, independent source identities and CLI guidance");
 } finally {
-  await rm(root, { recursive: true, force: true });
+  preserveTemp(root);
 }

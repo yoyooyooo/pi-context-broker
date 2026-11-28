@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { buildCliGuidance, buildInjectedContextMessage, buildInjectedPayload, invokeBeforeAgentStart } from "../src/index";
@@ -45,17 +46,17 @@ function content(value: unknown): MessageContent {
 }
 const decodeXml = (value: string) => value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 function fixture(key: string, sourceId = "alpha", enabled = true, kind: ContentKind = "skill") {
-  const id = "shared_skill:surfaces:" + sourceId + "-" + key;
+  const id = nativeSkillId("a499537f-4ee4-58b0-a4d5-8fa5050414e6", sourceId + "-" + key);
   const entrypoint = kind === "router" ? "ROUTER.md" : "SKILL.md";
   const metadata: ContentRecord = {
     id, kind, name: "Complete Source Name " + key, alias: key, description: "Full description " + key,
-    default_context: false, enabled, entrypoint, ref: "skill://" + encodeURIComponent(id) + "/" + entrypoint,
-    locator: { type: "shared_skill", library_id: "surfaces", skill_id: sourceId + "-" + key,
+    default_context: false, enabled, entrypoint, ref: nativeFileRef(id, String(entrypoint)),
+    locator: { type: "shared_skill", library_id: "a499537f-4ee4-58b0-a4d5-8fa5050414e6", skill_id: sourceId + "-" + key,
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010",
       data_source_id: "00000000-0000-4000-8000-000000000011" },
   };
   const sourceScope = hash(sourceId), snapshotId = "s_" + hash(sourceId + key), versionId = hash(body);
-  const fixedRef = metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + key;
+  const fixedRef = withNativeSnapshot(metadata.ref, snapshotId);
   const directory: PreparationDirectory = {
     files: [{ path: entrypoint, bytes: Buffer.byteLength(body), sha256: hash(body), ref: fixedRef }],
     required: [], candidates: [], references: [],
@@ -176,7 +177,7 @@ test("selected source wrappers advertise fixed supporting files without exposing
   expect(advertised).toBeDefined();
   const files = objects(JSON.parse(decodeXml(advertised!)));
   expect(files).toEqual([{ path: resource.path, ref: sourceFiles[1]!.ref }]);
-  expect(parseNativeReference(string(files[0]!.ref))).toMatchObject({ selector: record.id, snapshot: record.snapshotId, path: resource.path, fileId: "guide-resources" });
+  expect(parseNativeReference(string(files[0]!.ref))).toEqual({ selector: record.id, snapshot: record.snapshotId, path: resource.path });
   expect(header).not.toContain("/private/");
   expect(header).not.toContain("SKILL.md");
   expect(header).not.toContain("candidates");
@@ -228,13 +229,9 @@ test("canonical restored delivery retains fixed relative-resource routing withou
     assertSourceSpan(message, record);
   }
   const native = sourceMessageText(buildCliGuidance({}, nativeTools).content);
-  expect(native).toContain("preserve its owner and snapshot, replace only the logical file path");
-  expect(native).toContain("do not reuse the main file_id for another file");
-  const config: ConfigFile = { sources: [{ id: "alpha", type: "notion", command: ["/configured/node", "/configured/skills.mjs"] }] };
-  const fallback = sourceMessageText(buildCliGuidance(config, ["bash"]).content);
-  expect(fallback).toContain("/configured/skills.mjs");
-  expect(fallback).toContain("<read-args>");
-  expect(fallback).toContain("CLI commands cannot resolve session sr: handles");
+  expect(native).toContain("Keep owner/snapshot");
+  expect(native).toContain("never edit sr: handles");
+  expect(native).toContain("paths: same snapshot.");
 });
 
 test("undefined presentation references preserve legacy local and unavailable-native guidance exactly", () => {
@@ -263,7 +260,8 @@ test("Pi search projects candidate choices while retaining source disambiguation
   for (const [index, record] of records.entries()) {
     const card = cards[index]!, machine = full[index]!;
     expect(card).toEqual({ ref: machine.ref, kind: record.kind, name: record.name, description: record.description,
-      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled" });
+      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled",
+      ...(record.enabled ? {} : { error_code: "CONTENT_DISABLED" }) });
     expect(machine).toEqual({ ...card, id: record.id, scope: record.sourceScope });
     const reference = h.bridge.resolve(h.ctx, string(card.ref));
     const candidate = parseNativeReference(reference.canonicalRef);
@@ -301,7 +299,7 @@ test("search retains machine identity in the model fallback when native read and
 
 test("native main footer keeps exact v3 prefix and actionable relations while moving hashes and IDs to host-only directory proof", async () => {
   const root = fixture("native"), required = fixture("required"), member = fixture("disabled", "alpha", false);
-  const resource = root.ref.replace("SKILL.md", "references/guide.md") + "?snapshot=" + root.snapshotId + "&file_id=guide";
+  const resource = withNativeSnapshot(root.ref.replace("SKILL.md", "references/guide.md"), root.snapshotId);
   const relation = (record: Fixture) => ({ id: record.id, ref: record.ref, kind: record.kind, name: record.name,
     description: record.description, availability: record.enabled ? "available" : "disabled" });
   root.preparationDirectory = {
@@ -331,7 +329,11 @@ test("native main footer keeps exact v3 prefix and actionable relations while mo
   expect(footer).not.toContain('"sha256":');
   expect(footer).not.toContain(hash(root.body));
   expect(JSON.stringify(root)).toBe(before);
-  expect(await h.read(root, root.body.slice(1))).toBeUndefined();
+  const partial = await h.read(root, root.body.slice(1));
+  if (!partial) throw new Error("Expected partial read effects without source proof");
+  expect(object(partial.details).contextBrokerRead).toBeUndefined();
+  expect(sourceBodyLoaded([partial], root)).toBe(false);
+  expect(sourceMessageText(partial.content)).toBe(root.body.slice(1) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   expect(await h.read(root, root.body, true)).toBeUndefined();
 
   const resourceText = "Exact supporting bytes.\r\n", directoryWithFiles: PreparationDirectory = {
@@ -354,8 +356,9 @@ test("native main footer keeps exact v3 prefix and actionable relations while mo
 test("native reads without a short-reference session retain complete source and host directory without inventing handles", async () => {
   const root = fixture("native-fallback"), h = await hostHarness([root], nativeTools, false), message = await h.read(root);
   if (!message) throw new Error("Expected native main proof");
-  expect(sourceMessageText(message.content)).toBe(root.body);
-  expect(object(object(message.details).contextBrokerRead)).toMatchObject({ version: 2, directory: root.preparationDirectory });
+  expect(sourceMessageText(message.content)).toBe(root.body + '\n\n\n<notion-read-status>{"purpose":"inspect","activation_effect":"unchanged","requires_acquisition":"not_performed","use_selection":{"status":"inspection_only","roles":[]}}</notion-read-status>\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
+  expect(object(object(message.details).contextBrokerRead)).toMatchObject({ version: 3, directory: root.preparationDirectory,
+    delivery: { start: 0, end: root.body.length, encoding: "raw" } });
   expect(sourceBodyLoaded([message], root)).toBe(true);
   expect(h.entries).toEqual([]);
 });

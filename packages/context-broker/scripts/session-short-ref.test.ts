@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -24,18 +25,18 @@ function event(plan: ShortRefBindingPlan): SessionShortRefEvent {
 }
 function fixture(options: { version?: string; library?: string; skill?: string; resource?: string; fileId?: boolean; scope?: string } = {}) {
   const version = options.version ?? "one", resource = options.resource ?? "references/guide.md";
-  const library = options.library ?? "lib:team", skill = options.skill ?? "skill:owner";
+  const library = options.library ?? "6a85f222-0bdc-5f03-9dcf-c6995844de14", skill = options.skill ?? "skill-owner";
   const id = sharedSkillId(library, skill)!;
-  const base = "skill://" + encodeURIComponent(id) + "/", selectedScope = options.scope ?? scope;
+  const base = id, selectedScope = options.scope ?? scope;
   const record: ContentRecord = { id, kind: "skill", name: "Same display name", alias: "owner", description: "Catalog metadata",
-    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: base + "SKILL.md",
+    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"),
     locator: { type: "shared_skill", page_id: page("1"), database_id: page("10"), data_source_id: page("11"),
       library_id: library, skill_id: skill } };
   const snapshot_id = "s_" + hash("snapshot " + version), version_id = hash("version " + version);
   const body = "---\nname: owner\n---\nExact instructions " + version + ".\n";
   const bytes = new Map([["SKILL.md", Buffer.from(body)], [resource, Buffer.from("Exact resource bytes.\n")]]);
   const files = [...bytes].map(([path, value]) => ({ path, bytes: value.length, sha256: hash(value),
-    ref: base + path + "?snapshot=" + snapshot_id + (path === "SKILL.md" ? "&file_id=main" : options.fileId === false ? "" : "&file_id=guide") }));
+    ref: nativeFileRef(base, String(path), String(snapshot_id)) }));
   const binding: PreparationBinding = { record, scope: selectedScope, snapshot_id, version_id, body_sha256: hash(body), ref: files[0]!.ref };
   const snapshot: SkillRecord = { ...record, source: "notion", sourceId: "configured-source", sourceScope: selectedScope,
     path: "/machine-private/cache/scopes/long/records/long/snapshots/long/SKILL.md", body,
@@ -56,7 +57,7 @@ function selectedResource(f = fixture(), state: SessionShortRefState = empty()) 
 test("candidate batches reuse duplicate identities, preserve order and separate scope and library", () => {
   const initial = empty(), f = fixture();
   const inputs = [{ record: f.record, scope }, { record: f.record, scope: otherScope },
-    { record: fixture({ library: "another-library" }).record, scope },
+    { record: fixture({ library: "8b308dab-2daf-5330-922f-812244ff16f9" }).record, scope },
     { record: { ...f.record, name: "Renamed display", description: "Changed display" }, scope }];
   const planned = bindCandidates(initial, inputs);
   expect(initial.bindings.size).toBe(0);
@@ -114,13 +115,13 @@ test("directory, Members and search reuse one candidate despite display metadata
   expect(search.event).toBeUndefined();
   expect(search.state.bindings.size).toBe(1);
   expect(Buffer.byteLength(directory.ref)).toBe(26);
-  expect(resolveSessionShortRef(search.state, search.ref, scope)).toMatchObject({ kind: "candidate", canonicalRef: "skill://" + encodeURIComponent(f.record.id) });
+  expect(resolveSessionShortRef(search.state, search.ref, scope)).toMatchObject({ kind: "candidate", canonicalRef: f.record.id });
 });
 
 test("same names in another account, library or physical source never merge", () => {
   const f = fixture(), first = bindCandidate(empty(), { record: f.record, scope });
   const account = bindCandidate(first.state, { record: f.record, scope: otherScope });
-  const library = bindCandidate(account.state, { record: fixture({ library: "other-library" }).record, scope });
+  const library = bindCandidate(account.state, { record: fixture({ library: "01e28d4d-e490-5392-8c72-2262cd15c16d" }).record, scope });
   const source = bindCandidate(library.state, { record: { ...f.record, locator: { ...f.record.locator, database_id: page("99") } }, scope });
   expect(new Set([first.ref, account.ref, library.ref, source.ref]).size).toBe(4);
   code(() => resolveSessionShortRef(source.state, first.ref, otherScope), "SHORT_REF_SCOPE_MISMATCH");
@@ -207,19 +208,20 @@ test("replay refuses rebinding, duplicate aliases, unsupported versions and reso
   expect(duplicated.bindings.size).toBe(1);
 });
 
-test("stable File ID resolves a move within the chosen historical owner, never another snapshot", () => {
+test("fixed paths never repair an old spelling through a stable File ID", () => {
   const old = selectedResource(), movedFixture = fixture({ version: "two", resource: "moved/guide.md" });
   const moved = selectedResource(movedFixture, old.state);
   const formerSpelling = moved.files[1]!.ref.replace("moved/guide.md", old.resourcePath);
-  const repeated = bindResource(moved.state, moved.selected.ref, moved.snapshot, formerSpelling);
-  expect(repeated.ref).toBe(moved.resource.ref);
-  expect(repeated.event).toBeUndefined();
+  code(() => bindResource(moved.state, moved.selected.ref, moved.snapshot, formerSpelling), "SHORT_REF_OWNER_MISMATCH");
   expect(resolveSessionShortRef(moved.state, old.resource.ref, scope).canonicalRef).toBe(old.files[1]!.ref);
   expect(resolveSessionShortRef(moved.state, moved.resource.ref, scope).canonicalRef).toBe(moved.files[1]!.ref);
   code(() => bindResource(moved.state, moved.selected.ref, moved.snapshot, old.files[1]!.ref), "SHORT_REF_OWNER_MISMATCH");
-  code(() => bindResource(moved.state, moved.selected.ref, moved.snapshot, formerSpelling.replace("&file_id=guide", "")), "SHORT_REF_OWNER_MISMATCH");
+  code(() => bindResource(moved.state, moved.selected.ref, moved.snapshot, formerSpelling + "&file_id=guide"), "SHORT_REF_INVALID");
   const movedWithinOldSnapshot = fixture({ resource: "moved/guide.md" });
   code(() => bindResource(old.state, old.selected.ref, movedWithinOldSnapshot.snapshot, movedWithinOldSnapshot.files[1]!.ref), "SHORT_REF_CONFLICT");
+  const changedBinding = { ...old.snapshot, fileBindings: old.snapshot.fileBindings!.map(binding => binding.path === old.resourcePath
+    ? { ...binding, file_id: "replacement" } : binding) };
+  code(() => bindResource(old.state, old.selected.ref, changedBinding, old.files[1]!.ref), "SHORT_REF_CONFLICT");
 });
 
 test("resources reject candidates, mismatched scope, owner, version, File ID and manifest", () => {
@@ -231,8 +233,8 @@ test("resources reject candidates, mismatched scope, owner, version, File ID and
     { ...f.snapshot, locator: { ...f.snapshot.locator!, database_id: page("99") } },
     { ...f.snapshot, entryManifest: undefined }, fixture({ skill: "another" }).snapshot,
   ]) code(() => bindResource(f.state, f.selected.ref, snapshot, f.files[1]!.ref), "SHORT_REF_OWNER_MISMATCH");
-  for (const ref of [f.files[1]!.ref.replace("file_id=guide", "file_id=foreign"), fixture({ skill: "another" }).files[1]!.ref,
-    f.files[1]!.ref.replace("&file_id=guide", "").replace(f.resourcePath, "missing.md")]) {
+  for (const ref of [f.files[1]!.ref.replace(f.resourcePath, "foreign.md"), fixture({ skill: "another" }).files[1]!.ref,
+    f.files[1]!.ref.replace(f.resourcePath, "missing.md")]) {
     code(() => bindResource(f.state, f.selected.ref, f.snapshot, ref), "SHORT_REF_OWNER_MISMATCH");
   }
   const ambiguous = { ...f.snapshot, fileBindings: [...f.snapshot.fileBindings!, { file_id: "guide", page_id: page("3"), path: "other.md" }] };
@@ -242,7 +244,7 @@ test("resources reject candidates, mismatched scope, owner, version, File ID and
   code(() => bindResource(f.state, f.selected.ref, f.snapshot, f.files[1]!.ref.replace(f.resourcePath, "../secret")), "SHORT_REF_INVALID");
 });
 
-test("main-file references reuse the selected handle and legacy resources remain exact pinned paths", () => {
+test("main-file references reuse the selected handle and Source resources keep exact pinned paths", () => {
   const f = fixture({ fileId: false }), selected = bindSelected(empty(), f.binding);
   const main = bindResource(selected.state, selected.ref, f.snapshot, f.files[0]!.ref);
   expect(main.ref).toBe(selected.ref);
@@ -285,7 +287,7 @@ test("portable export includes exact source/version/File ID and excludes local h
   const f = fixture();
   f.record.name = "incidental-name-secret";
   f.record.description = "incidental-description-secret";
-  f.record.upstream = { repo: "incidental-upstream-secret" };
+  Object.assign(f.record, { incidental_metadata: "incidental-source-secret" });
   f.snapshot.token = "incidental-token-secret";
   const result = selectedResource(f), exported = exportSessionShortRef(result.state, result.resource.ref, scope);
   expect(exported).toMatchObject({ version: 1, kind: "fixed_skill_reference", ref: f.files[1]!.ref,
@@ -299,7 +301,7 @@ test("portable export includes exact source/version/File ID and excludes local h
 
 test("input mutation cannot silently change a saved identity or selected snapshot", () => {
   const f = fixture(), plan = bindSelected(empty(), f.binding), saved = JSON.stringify(event(plan));
-  if (f.record.locator.type === "shared_skill") f.record.locator.library_id = "changed-after-binding";
+  if (f.record.locator.type === "shared_skill") f.record.locator.library_id = "2747fac6-495b-56c0-a4bb-8800e416c42b";
   f.binding.version_id = "changed-after-binding";
   expect(JSON.stringify(event(plan))).toBe(saved);
   const originalEvent = JSON.parse(saved), restored = reduceSessionShortRefs([entry(originalEvent)]);
@@ -309,17 +311,20 @@ test("input mutation cannot silently change a saved identity or selected snapsho
   code(() => reduceSessionShortRefs([entry(extra)]), "SHORT_REF_INVALID");
 });
 
-test("canonical identity and locator agree for page, subscription and shared records; local is explicit unsupported", () => {
+test("retired page and subscription locators are rejected; current identity stays exact and local is unsupported", () => {
   const f = fixture();
-  const pageRecord: ContentRecord = { ...f.record, id: "notion_page:" + page("20"), ref: "skill://" + page("20") + "/SKILL.md",
+  const pageRecord = { ...f.record, id: "notion_page:" + page("20"), ref: "skill://" + page("20") + "/SKILL.md",
     locator: { type: "notion_page", page_id: page("20"), database_id: page("10"), data_source_id: page("11") } };
-  const subscription: ContentRecord = { ...f.record, kind: "router", id: "notion_subscription:" + page("30"), entrypoint: "ROUTER.md",
-    ref: "skill://" + encodeURIComponent("upstream:" + page("30")) + "/ROUTER.md",
+  const subscription = { ...f.record, kind: "router", id: "notion_subscription:" + page("30"), entrypoint: "ROUTER.md",
+    ref: "skill://upstream%3A" + page("30") + "/ROUTER.md",
     locator: { type: "notion_subscription", subscription_id: page("30"), database_id: page("10"), data_source_id: page("11"), target_database_id: page("31") } };
-  const first = bindCandidate(empty(), { record: pageRecord, scope });
-  const second = bindCandidate(first.state, { record: subscription, scope });
-  expect(second.state.bindings.size).toBe(2);
-  code(() => bindCandidate(second.state, { record: { ...f.record, id: pageRecord.id }, scope }), "SHORT_REF_INVALID");
-  code(() => bindCandidate(second.state, { record: { ...f.record, ref: pageRecord.ref }, scope }), "SHORT_REF_INVALID");
-  code(() => bindCandidate(second.state, { record: { ...f.record, locator: { type: "local", id: "/private/local", entry: "/private/local/SKILL.md" } }, scope }), "SHORT_REF_UNSUPPORTED");
+  for (const retired of [pageRecord, subscription]) {
+    const wire = JSON.parse(JSON.stringify(retired));
+    code(() => bindCandidate(empty(), { record: wire, scope }), "SHORT_REF_INVALID");
+  }
+  const current = bindCandidate(empty(), { record: f.record, scope });
+  expect(current.state.bindings.size).toBe(1);
+  code(() => bindCandidate(current.state, { record: { ...f.record, id: pageRecord.id }, scope }), "SHORT_REF_INVALID");
+  code(() => bindCandidate(current.state, { record: { ...f.record, ref: pageRecord.ref }, scope }), "SHORT_REF_INVALID");
+  code(() => bindCandidate(current.state, { record: { ...f.record, locator: { type: "local", id: "/private/local", entry: "/private/local/SKILL.md" } }, scope }), "SHORT_REF_UNSUPPORTED");
 });

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { skillFileRef } from './skill-ref-fixture.mjs';
 import { after, test } from 'node:test';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -6,6 +7,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { observeConsumptionCost, consumptionCostExtensionSource, readConsumptionCostEvents, freezeConsumptionPlan,
   summarizeConsumptionSource, summarizeConsumptionSample, consumptionMetricStats, compareConsumptionRuns } from './skill-consumption-cost.mjs';
 
@@ -83,6 +85,72 @@ const sample = (observed, overrides = {}) => summarizeConsumptionSample({ id: 'a
   events: observed.events, submission: observed.submission, source: source(), outcome, ...overrides });
 const run = samples => ({ plan: freezeConsumptionPlan({ conditions, samples: samples.map(item => item.scenario) }), samples });
 
+function forkApi() {
+  const handlers = new Map(); let disposed = false;
+  return { handlers, api: { on(name, callback) {
+    assert.equal(disposed, false); const group = handlers.get(name) ?? new Set(); group.add(callback); handlers.set(name, group);
+    return () => { group.delete(callback); if (!group.size) handlers.delete(name); };
+  } }, emit(name, event = {}, context) {
+    for (const callback of [...(handlers.get(name) ?? [])]) assert.equal(callback(event, context), undefined);
+  }, dispose() { disposed = true; handlers.clear(); } };
+}
+
+test('serialized cost observer survives Pi fork API replacement without reopening the ledger or resetting request counters', async () => {
+  const file = output(), extension = path.join(scratch, 'fork-cost-' + serial + '.mjs');
+  const settings = { output: file, checkoutRoot: root, runId: 'run', sampleId: 'a', clockId: 'host-boot' };
+  fs.writeFileSync(extension, consumptionCostExtensionSource(settings));
+  const old = forkApi(), next = forkApi();
+  const first = await import(pathToFileURL(extension).href + '?first'); first.default(old.api); first.default(old.api);
+  const body = 'original private body before fork', model = { model: { provider: 'fixture', id: 'fixture' } };
+  const turn = (surface, messages) => {
+    surface.emit('input', { source: 'rpc', text: 'continue' }); surface.emit('agent_start');
+    surface.emit('context_with_system', { messages });
+    surface.emit('before_provider_request', { payload: { model: 'fixture', messages: [{ role: 'user', content: body }] } }, model);
+    const message = { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'Requested work completed.' }], usage: reportedUsage };
+    surface.emit('message_update', { assistantMessageEvent: { type: 'text_delta', delta: 'Completed.' } });
+    surface.emit('message_end', { message }); surface.emit('agent_end', { messages: [message] });
+  };
+  turn(old, [preparedBody(body)]);
+  const prefix = fs.readFileSync(file), inode = fs.statSync(file).ino, staleInput = [...old.handlers.get('input')][0];
+  old.emit('session_shutdown', { type: 'session_shutdown', reason: 'fork', targetSessionFile: '/private/fork-target.jsonl' });
+  assert.equal(old.handlers.size, 0); old.dispose();
+  const boundary = (await readConsumptionCostEvents(file)).events;
+  assert.equal(boundary.at(-1).phase, 'session_shutdown'); assert.equal(boundary.at(-1).reason, 'fork');
+  assert.equal(boundary.some(row => row.phase === 'observer_end'), false);
+  const second = await import(pathToFileURL(extension).href + '?reloaded'); second.default(next.api); second.default(next.api);
+  staleInput({ text: 'stale callback', source: 'rpc' }); turn(next, []);
+  next.emit('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
+  const observed = await readConsumptionCostEvents(file), events = observed.events;
+  assert.equal(fs.statSync(file).ino, inode); assert.ok(fs.readFileSync(file).subarray(0, prefix.length).equals(prefix));
+  assert.equal(events.filter(row => row.phase === 'observer_start').length, 1);
+  assert.equal(events.filter(row => row.phase === 'observer_end').length, 1);
+  assert.equal(events.filter(row => row.phase === 'observer_rebind').length, 1);
+  assert.deepEqual(events.filter(row => row.phase === 'input').map(row => row.turn), [1, 2]);
+  assert.deepEqual(events.filter(row => row.phase === 'provider_request').map(row => row.request), [1, 2]);
+  assert.deepEqual(events.filter(row => row.phase === 'message_update').map(row => row.firstEffectiveText), [true, true]);
+  assert.equal(events.filter(row => row.phase === 'provider_request')[1].payload.verifiedBodyOccurrences[0].firstObservedTurn, 1);
+  const submission = { promptSha256: conditions.promptSha256, monotonicNs: events[0].monotonicNs,
+    clockId: 'host-boot', evidenceSha256: sha('fork-driver') };
+  assert.equal(sample({ ...observed, submission }).valid, true);
+  assert.equal(fs.readFileSync(file, 'utf8').includes('/private/fork-target.jsonl'), false);
+  assert.throws(() => second.default(forkApi().api), /CLOSED/);
+  assert.throws(() => observeConsumptionCost(forkApi().api, { fs, crypto, path, ...settings }), /EEXIST/);
+});
+
+test('a cost fork cannot finish successfully without rebind and refuses unrelated replacement APIs', async () => {
+  const old = forkApi(), next = forkApi(), file = output();
+  const observer = observeConsumptionCost(old.api, { fs, crypto, path, output: file, checkoutRoot: root,
+    runId: 'run', sampleId: 'a', clockId: 'host-boot' });
+  assert.throws(() => observer.bind(next.api), /REBIND_WITHOUT_FORK/);
+  old.emit('session_shutdown', { reason: 'fork', targetSessionFile: '/private/fork.jsonl' });
+  assert.throws(() => observer.bind(old.api), /REBIND_WITHOUT_FORK/);
+  observer.finish();
+  const observed = await readConsumptionCostEvents(file);
+  assert.equal(observed.events.at(-1).complete, false);
+  assert.equal(observed.events.at(-1).pendingForkRebind, true);
+  assert.ok(sample(observed).errors.includes('COST_FORK_LIFECYCLE_INVALID'));
+});
+
 test('model identity and thinking observations come from actual hooks and responses beside their own usage', async () => {
   const payload = deepFreeze({ model: 'group/flash', reasoning_effort: 'high', messages: [{ role: 'user', content: 'task' }] });
   const context = deepFreeze({ model: { provider: 'magpie', id: 'group/flash' } });
@@ -105,6 +173,25 @@ test('model identity and thinking observations come from actual hooks and respon
   assert.equal(missingResponse.usage.totalTokens, reportedUsage.totalTokens, 'Missing model metadata must not rewrite usage');
 });
 
+test('raw invalid response models cannot become unreported cost evidence for completion', async () => {
+  const end = { category: 'model', status: 200, outcome: 'failure', errorName: 'AbortError', errorCode: 20,
+    modelApi: 'openai-completions', contentEncoding: 'identity', contentType: 'text/event-stream',
+    sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } };
+  for (const [status, fields] of [
+    ['invalid', { responseModel: 42 }], ['invalid', { responseModel: { secret: 'raw-invalid-secret' } }],
+    ['invalid', { responseModel: '' }], ['invalid', { responseModel: 'raw invalid secret' }],
+    ['unreported', {}], ['unreported', { responseModel: null }], ['reported', { responseModel: 'actual/route' }],
+  ]) {
+    const observed = await observe({ assistantFields: { provider: 'magpie', model: 'group/worker', ...fields } });
+    const message = observed.events.find(row => row.phase === 'message_end').message, accepted = status !== 'invalid';
+    assert.equal(providerApplicationCompletion(end, message), accepted ? 'sse-done-before-http-cancel' : null);
+    assert.equal(providerApplicationCompletion({ ...end, outcome: 'completed' }, message), accepted ? 'http-complete' : null);
+    assert.equal(message.responseModelStatus, status);
+    assert.equal(message.responseModel, status === 'reported' ? fields.responseModel : null);
+    assert.equal(fs.readFileSync(observed.file, 'utf8').includes('raw-invalid-secret'), false);
+  }
+});
+
 function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepare' : 'notion_use') {
   const record = { name: 'controlled', kind: 'skill', ref: 'sr:S' + 'a'.repeat(22), content: body,
     directory: { files: [], required: [], candidates: [], references: [] } };
@@ -123,7 +210,7 @@ function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepa
   return { role: 'toolResult', toolName, toolCallId: group.toolCallId, content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: group } };
 }
 
-async function bodyObservation({ messages = [], payload, toolResult, serialized = false }) {
+async function bodyObservation({ messages = [], payload, toolResult, serialized = false, context }) {
   const handlers = new Map(), file = output();
   const api = { on: (name, callback) => handlers.set(name, callback) };
   const settings = { output: file, checkoutRoot: root, runId: 'body-run', sampleId: 'body', clockId: 'body-clock' };
@@ -134,7 +221,7 @@ async function bodyObservation({ messages = [], payload, toolResult, serialized 
   } else observeConsumptionCost(api, { fs, crypto, path, ...settings });
   const emit = (name, event) => {
     const before = copy(event); deepFreeze(event);
-    assert.equal(handlers.get(name)(event), undefined);
+    assert.equal(handlers.get(name)(event, context), undefined);
     assert.deepEqual(event, before);
   };
   if (toolResult) emit('tool_result', toolResult);
@@ -154,6 +241,68 @@ test('prepare JSON body occurrences use actual content, preserving Unicode/BOM/C
     assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.sha256, item.bytes, item.occurrences]), [[sha(body), Buffer.byteLength(body), 1]]);
     assert.ok(!measured.raw.includes('quoted') && !measured.raw.includes('作者'));
   }
+});
+
+function resumedInjection() {
+  const bodies = ['\uFEFFRoot 完整 <source> & bytes\r\n', 'Requires 原文 🧭\r\n'];
+  let content = 'Previous user prompt 🧭\n';
+  const records = bodies.map((body, index) => {
+    const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    content += '<body>';
+    const start = content.length;
+    content += encoded + '</body>\n';
+    return { ...preparedBody(body).details.contextBrokerPreparation.records[0],
+      identity: JSON.stringify(['controlled', 'f'.repeat(64), 'skill', 'shared_skill', 'owner-' + index]),
+      delivery: { start, end: start + encoded.length, encoding: 'xml' } };
+  });
+  const data = { nativePromptSha256: sha(content), records };
+  const projection = { entries: [{ sourceEntry: { type: 'custom', customType: 'context-broker', id: 'effective-receipt', data } }] };
+  return { bodies, content, projection };
+}
+
+test('resumed native receipts recover exact current-context bodies without replacing provider data', async () => {
+  for (const serialized of [false, true]) {
+    const { bodies, content, projection } = resumedInjection();
+    const priorTool = preparedBody('Previously delivered tool body');
+    const messages = [{ role: 'user', content }, priorTool];
+    const payload = { messages: [{ role: 'user', content }, { role: 'tool', content: priorTool.content }] };
+    const context = deepFreeze({ sessionManager: { buildSessionProjection: () => projection,
+      getEntries: () => { throw new Error('Full session history is not effective context'); } } });
+    deepFreeze(projection);
+    const measured = await bodyObservation({ messages, payload, context, serialized });
+    const actual = Object.fromEntries(measured.verifiedBodyOccurrences.map(item => [item.sha256, [item.bytes, item.occurrences]]));
+    assert.deepEqual(actual, Object.fromEntries([...bodies, 'Previously delivered tool body'].map(body => [sha(body), [Buffer.byteLength(body), 1]])));
+    assert.equal(measured.sha256, sha(JSON.stringify(payload)));
+    assert.ok(!measured.raw.includes('完整') && !measured.raw.includes('Previously delivered tool body'));
+  }
+});
+
+test('resumed receipts require the effective projection, matching user hash and complete spans', async () => {
+  const base = resumedInjection();
+  const invalid = [
+    undefined,
+    { sessionManager: {} },
+    { sessionManager: { buildSessionProjection: () => ({ entries: [] }),
+      getEntries: () => { throw new Error('Non-effective history must not be scanned'); } } },
+  ];
+  for (const mutate of [
+    entry => { entry.customType = 'foreign'; },
+    entry => { entry.data.nativePromptSha256 = sha('summary'); },
+    entry => { for (const proof of entry.data.records) proof.delivery.end--; },
+    entry => { for (const proof of entry.data.records) proof.snapshotId = 'unfixed'; },
+  ]) {
+    const projection = copy(base.projection); mutate(projection.entries[0].sourceEntry);
+    invalid.push({ sessionManager: { buildSessionProjection: () => projection } });
+  }
+  for (const context of invalid) {
+    const messages = [{ role: 'user', content: base.content }];
+    const measured = await bodyObservation({ messages, payload: { messages }, context, serialized: true });
+    assert.deepEqual(measured.verifiedBodyOccurrences, []);
+  }
+  const messages = [{ role: 'user', content: base.content }];
+  const context = { sessionManager: { buildSessionProjection: () => base.projection } };
+  const summarized = await bodyObservation({ messages, context, payload: { messages: [{ role: 'user', content: 'Only a summary remains' }] } });
+  assert.deepEqual(summarized.verifiedBodyOccurrences.map(item => item.occurrences), [0, 0]);
 });
 
 test('current use and legacy prepare receipts stay explicit; nested, printed and truncated code results prove no delivery', async () => {
@@ -186,8 +335,8 @@ test('resource batch cost observes actual nonempty text spans and never binary o
     offsets.push({ start, end, encoding: 'json' }); cursor = end + 1;
   }
   const proof = { version: 2, toolCallId: 'resource-batch', loaded: false,
-    selection: { scope: 'scope', owner: 'shared_skill:lib:resource', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
-    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: 'skill://owner/' + file.path, path: file.path, loaded: false,
+    selection: { scope: 'scope', owner: 'skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
+    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: skillFileRef('skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', file.path, 's_' + 'a'.repeat(64)), path: file.path, loaded: false,
       ...(file.kind === 'text' ? { state: 'source', encoding: 'utf8', delivered_complete_text: true, sha256: sha(bodies[index]), bytes: Buffer.byteLength(bodies[index]), delivery: offsets[index] }
         : { state: 'binary', encoding: 'base64', delivered_complete_text: false, sha256: file.sha256, bytes: file.bytes }) })),
     projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(text), bytes: Buffer.byteLength(text) } } };
@@ -201,6 +350,41 @@ test('resource batch cost observes actual nonempty text spans and never binary o
     const absent = await bodyObservation({ messages: [invalid], payload: { messages: [{ role: 'tool', content: text }] } });
     assert.deepEqual(absent.verifiedBodyOccurrences, []);
   }
+});
+
+test('scalar resource v2 counts the exact native prefix and keeps effects outside source bytes', async () => {
+  const body = '\uFEFF# Reference\r\n完整正文 🧭 & "quoted"\r\n';
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
+  const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', scope: 'original-scope',
+    ref: skillFileRef('skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'reference.md', 's_' + 'a'.repeat(64)), path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
+    loaded: false, delivered_complete_text: true, bytes: Buffer.byteLength(body), sha256: sha(body),
+    delivery: { start: 0, end: body.length, encoding: 'raw' } };
+  const message = { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
+    content: [{ type: 'text', text: body }, { type: 'text', text: footer }], details: { effects, contextBrokerResource: proof } };
+  const payload = { messages: [{ role: 'tool', content: body + '\n' + footer }] };
+  const measured = await bodyObservation({ messages: [message], payload, serialized: true });
+  assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.kind, item.sha256, item.bytes, item.occurrences]),
+    [['resource', sha(body), Buffer.byteLength(body), 1]]);
+  for (const mutate of [
+    value => { value.details.contextBrokerResource.delivery.start = 1; },
+    value => { value.details.contextBrokerResource.delivery.end++; },
+    value => { value.details.contextBrokerResource.delivery.encoding = 'json'; },
+    value => { value.details.contextBrokerResource.sha256 = sha(body + '\n' + footer); },
+    value => { value.details.contextBrokerResource.bytes++; },
+    value => { value.details.contextBrokerResource.loaded = true; },
+    value => { value.details.contextBrokerResource.files = []; },
+    value => { value.toolCallId = 'another-call'; },
+    value => { value.content[0].text = body.slice(0, -1); },
+    value => { value.content[1].text = 'detached footer'; },
+    value => { value.details.effects.remote_writes = 'unknown'; },
+  ]) {
+    const invalid = copy(message); mutate(invalid);
+    assert.deepEqual((await bodyObservation({ messages: [invalid], payload })).verifiedBodyOccurrences, []);
+  }
+  const legacy = copy(message); legacy.details.contextBrokerResource.version = 1; delete legacy.details.contextBrokerResource.delivery;
+  legacy.content = [{ type: 'text', text: body }];
+  assert.equal((await bodyObservation({ messages: [legacy], payload: { messages: [{ content: body }] } })).verifiedBodyOccurrences[0].occurrences, 1);
 });
 
 test('raw, XML and JSON representations count distinct spans and never count one span twice', async () => {
@@ -429,4 +613,24 @@ test('shrinking only the first request cannot conceal more tool rounds or higher
   assert.equal(result.status, 'rejected'); assert.equal(result.regressions[0].code, 'COST_FIRST_REQUEST_ONLY_IMPROVEMENT');
   const failed = copy(baseline); failed.samples[0].status = 'failed';
   assert.ok(compareConsumptionRuns({ baseline, candidate: failed }).regressions.some(item => item.code === 'COST_TASK_SUCCESS_REGRESSION'));
+});
+
+test('Responses cost records actual API, nested effort and terminal identity without changing provider input', async () => {
+  const observed = await observe({ context: { model: { provider: 'magpie', id: 'group/worker', api: 'openai-responses' } },
+    payload: { model: 'group/worker', reasoning: { effort: 'high' }, input: [{ role: 'user', content: 'private request' }] },
+    assistantFields: { provider: 'magpie', model: 'group/worker', api: 'openai-responses',
+      responseId: 'resp_cost_fixture', rawStopReason: 'completed' } });
+  const request = observed.events.find(row => row.phase === 'provider_request');
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  assert.equal(request.api, 'openai-responses'); assert.equal(request.reasoningEffort, 'high');
+  assert.equal(message.api, 'openai-responses'); assert.equal(message.responseId, 'resp_cost_fixture');
+  assert.equal(message.rawStopReason, 'completed');
+  assert.equal(fs.readFileSync(observed.file, 'utf8').includes('private request'), false);
+});
+
+test('Responses cost does not invent API, identity or completion from invalid native metadata', async () => {
+  const observed = await observe({ assistantFields: { api: { secret: 'private' }, responseId: 'bad response id with spaces',
+    rawStopReason: { status: 'completed' } } });
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  for (const key of ['api', 'responseId', 'rawStopReason']) assert.equal(message[key], null, key);
 });

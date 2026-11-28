@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "./types";
 
 export type HostTextComponent = { render(width: number): string[]; invalidate(): void };
-export type HostTextConstructor = new (text: string, paddingX: number, paddingY: number) => HostTextComponent;
+export type HostTextConstructor = new (text: string, paddingX: number, paddingY: number, background?: (text: string) => string) => HostTextComponent;
 
 export async function hostTextComponent(api: ExtensionAPI): Promise<HostTextConstructor> {
   const host = api as ExtensionAPI & { pi?: { Text?: HostTextConstructor } };

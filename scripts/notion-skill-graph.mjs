@@ -1,3 +1,4 @@
+import { nativeFileRef as fileRef, nativeSkillId, parseNativeReference, nativeFileBinding } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -23,7 +24,6 @@ const graphDatabase = uuid(100);
 const graphDataSource = uuid(101);
 const graphView = { id: uuid(102), name: 'Root only', type: 'table', database_id: graphDatabase, data_source_id: graphDataSource, url: `https://notion.so/${graphDatabase}?v=${uuid(102)}` };
 const token = 'controlled-skill-graph-no-remote-credential';
-const fileRef = (id, path, snapshot, fileId) => `skill://${encodeURIComponent(id)}/${path.split('/').map(encodeURIComponent).join('/')}${snapshot || fileId ? '?' : ''}${[snapshot ? `snapshot=${snapshot}` : '', fileId ? `file_id=${encodeURIComponent(fileId)}` : ''].filter(Boolean).join('&')}`;
 
 // These frozen manifests are fixture input, not a dependency resolver. The
 // installed CLI performs all graph traversal, pin checks, budgets and hashing.
@@ -31,7 +31,7 @@ function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKi
   assert.ok(invalidRequiredKind === undefined || ['router', 'prompt'].includes(invalidRequiredKind));
   assert.equal(typeof rootBodySuffix, 'string');
   assert.equal(typeof rootResource, 'boolean');
-  const libraryId = renamed ? 'cobalt-library-73' : 'controlled-graph';
+  const libraryId = uuid(renamed ? 50099 : 99);
   const pageId = number => uuid(number + (renamed ? 50000 : 0));
   const database = pageId(100), dataSource = pageId(101);
   const view = { ...graphView, id: pageId(102), database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${pageId(102)}` };
@@ -40,13 +40,13 @@ function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKi
   const identity = (key, number) => ({ name: renamed ? renamedNames[key] : key, skillId: renamed ? `unit-${number * 37}` : key, fileId: index => renamed ? `${index ? 'resource' : 'main'}-opaque-${number * 71}-${index}` : index ? `resource-${key}-${index}` : `main-${key}` });
   const make = (key, number, { kind = 'skill', required = [], members = [], body, resources = [], revision = 1 } = {}) => {
     const { name, skillId, fileId } = identity(key, number);
-    const id = `shared_skill:${libraryId}:${skillId}`;
+    const id = nativeSkillId(libraryId, skillId);
     const entrypoint = kind === 'router' ? 'ROUTER.md' : kind === 'prompt' ? 'PROMPT.md' : 'SKILL.md';
     const record = { id, kind, name, alias: name, description: `${name} controlled graph instructions`, enabled: true, default_context: key === 'graph-root', entrypoint, ref: fileRef(id, entrypoint), locator: { type: 'shared_skill', library_id: libraryId, skill_id: skillId, page_id: pageId(number), database_id: database, data_source_id: dataSource } };
     const main = body ?? `# ${name}\nGRAPH_INSTRUCTION_${name.toUpperCase().replaceAll('-', '_')}\nFollow this complete instruction before applying its dependent workflow.\n`;
     const data = [{ path: entrypoint, content: main }, ...resources];
     const files = data.map(({ path, content }) => ({ path, bytes: Buffer.byteLength(content), sha256: sha(content) }));
-    const relation = target => ({ id: target.record.id, ref: fileRef(target.record.id, target.entrypoint, target.snapshot_id, target.file_bindings.find(file => file.path === target.entrypoint).file_id), metadata: target.record });
+    const relation = target => ({ id: target.record.id, ref: fileRef(target.record.id, target.entrypoint, target.snapshot_id), metadata: target.record });
     const requiredDirectory = required.map(target => typeof target === 'string' ? { id: target, ref: fileRef(target, 'SKILL.md', 's_' + 'f'.repeat(64)), metadata: { kind: 'skill', name: 'Missing prerequisite', description: 'Deliberately absent frozen dependency' } } : relation(target));
     const memberDirectory = members.map(relation);
     const version = sha(JSON.stringify([record, files, requiredDirectory, memberDirectory, revision]));
@@ -59,16 +59,16 @@ function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKi
   const left = make('graph-left', 2, { required: [base] });
   const right = make('graph-right', 3, { required: [base] });
   const memberIdentity = identity('graph-member', 4);
-  const memberId = `shared_skill:${libraryId}:${memberIdentity.skillId}`;
+  const memberId = nativeSkillId(libraryId, memberIdentity.skillId);
   const resource = { path: renamed ? 'references/copper-report.md' : 'references/ledger.md', content: 'GRAPH_MEMBER_RESOURCE_COMPLETE\nEntry: 29\nApproved ledger explanation.\n' };
-  // The spelling is stale intentionally. Its stable file_id binds the current
-  // resource path; neither the provider nor the runner guesses that path.
-  const member = make('graph-member', 4, { body: `# ${memberIdentity.name}\nGRAPH_MEMBER_OPTIONAL_BODY\nRead [the ledger evidence](${fileRef(memberId, renamed ? 'references/former-copper.md' : 'references/previous-ledger.md', undefined, memberIdentity.fileId(1))}) to explain the entry.\n`, resources: [resource] });
-  const memberRef = fileRef(member.record.id, member.entrypoint, member.snapshot_id, memberIdentity.fileId(0));
+  // The immutable manifest owns this exact path. A former spelling must never
+  // be repaired by a public File ID or current metadata.
+  const member = make('graph-member', 4, { body: `# ${memberIdentity.name}\nGRAPH_MEMBER_OPTIONAL_BODY\nRead [the ledger evidence](${fileRef(memberId, resource.path, undefined)}) to explain the entry.\n`, resources: [resource] });
+  const memberRef = fileRef(member.record.id, member.entrypoint, member.snapshot_id);
   const rootResourceFile = rootResource ? { path: 'references/root-ledger.md', content: 'GRAPH_ROOT_RESOURCE_COMPLETE\nEntry: 41\nRoot ledger belongs to this workflow.\n' } : undefined;
   const rootBody = `# ${identity('graph-root', 5).name}\nGRAPH_ROOT_WORKFLOW_COMPLETE\nApply the prerequisite instructions. The Members directory contains an optional reference for a separate explanation.\n\n## Members\n\n- [${memberIdentity.name}](${memberRef}) — Optional ledger explanation\n` + rootBodySuffix + (rootResourceFile ? `\nRead [the root ledger](${rootResourceFile.path}).\n` : '');
   const invalidRequired = invalidRequiredKind ? make('graph-invalid', 8, { kind: invalidRequiredKind, required: [base], members: [member] }) : undefined;
-  const required = broken ? [`shared_skill:${libraryId}:missing`] : invalidRequired ? [left, invalidRequired] : [left, right];
+  const required = broken ? [nativeSkillId(libraryId, "missing")] : invalidRequired ? [left, invalidRequired] : [left, right];
   const root = make('graph-root', 5, { required, members: [member], body: rootBody, resources: rootResourceFile ? [rootResourceFile] : [] });
   const oldRoot = root;
   const changedRoot = make('graph-root', 5, { required, members: [member], body: rootBody.replace('GRAPH_ROOT_WORKFLOW_COMPLETE', 'GRAPH_ROOT_WORKFLOW_REVISION_TWO'), resources: rootResourceFile ? [rootResourceFile] : [], revision: 2 });
@@ -180,7 +180,7 @@ async function sourceCommand(statePath, args) {
   if (command === 'list') {
     const selectedView = args.includes('--default-view') || args.includes('--view');
     const records = frozen.nodes.filter(node => node !== frozen.bom && node.record.id !== frozen.bom.record.id).map(node => node.record).filter(record => !selectedView || record.default_context);
-    out({ ok: true, scope: state.scope, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: database, title: 'Controlled graph', alias: frozen.root.record.locator.library_id, data_source_ids: [dataSource] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_database', exhaustive: true, queried_data_sources: [dataSource], failed_sources: [], search_index_limited: false }, freshness: { policy: 'default', validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 60000, stale: false }, ...(selectedView ? { view, view_selection: args.includes('--view') ? 'explicit' : 'first', view_query: null } : {}) });
+    out({ ok: true, scope: state.scope, library_id: frozen.root.record.locator.library_id, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: database, title: 'Controlled graph', alias: frozen.root.record.locator.library_id, data_source_ids: [dataSource] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_library', exhaustive: true, queried_data_sources: [dataSource], failed_sources: [], search_index_limited: false }, freshness: { policy: 'default', validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 60000, stale: false }, ...(selectedView ? { view, view_selection: args.includes('--view') ? 'explicit' : 'first', view_query: null } : {}) });
     return;
   }
   assert.ok(['prepare', 'read', 'export', 'schema'].includes(command), `Unsupported graph fixture command: ${command}`);
@@ -215,7 +215,7 @@ export async function smokeGraphFixture(options) {
     const pinned = await fixture.invoke(['prepare', fixture.graph.root.record.ref, '--offline', '--session-bindings', bindings]);
     assert.equal(pinned.code, 0, pinned.stdout);
     assert.equal(JSON.parse(pinned.stdout).nodes.find(node => node.id === fixture.graph.root.record.id).binding.snapshot_id, fixture.graph.root.snapshot_id);
-    const fixed = fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id, fixture.graph.root.file_bindings.find(file => file.path === fixture.graph.root.entrypoint).file_id);
+    const fixed = fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id);
     const read = await fixture.invoke(['read', fixed, '--offline', '--metrics']);
     assert.equal(read.code, 0, read.stdout);
     assert.equal(JSON.parse(read.stdout).content, fixture.graph.root.body);
@@ -380,7 +380,7 @@ export function verifySessionReceipts(messages, nodes, { historicalSkillPrepare 
       assert.equal(receipt.bodySha256, sha(body));
       assert.equal(receipt.bytes, Buffer.byteLength(body));
       assert.equal(receipt.snapshotId, node.snapshot_id);
-      if (receipt.binding) { assert.equal(receipt.binding.scope, node.scope); assert.equal(receipt.binding.record.id, node.record.id); assert.equal(receipt.binding.snapshot_id, node.snapshot_id); assert.equal(receipt.binding.body_sha256, sha(body)); assert.ok(receipt.binding.ref.includes('file_id=main-'), 'Graph main binding preserves its stable file id'); }
+      if (receipt.binding) { assert.equal(receipt.binding.scope, node.scope); assert.equal(receipt.binding.record.id, node.record.id); assert.equal(receipt.binding.snapshot_id, node.snapshot_id); assert.equal(receipt.binding.body_sha256, sha(body)); assert.equal(receipt.binding.ref, fileRef(node.record.id, node.record.entrypoint, node.snapshot_id), 'Graph main binding uses the exact selected manifest entry'); }
       verified.push({ id: node.record.id, scope: node.scope, snapshot_id: node.snapshot_id, body_sha256: receipt.bodySha256, bytes: receipt.bytes, encoding: receipt.delivery?.encoding ?? 'raw' });
     }
   }
@@ -423,8 +423,8 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
       const providerFile = join(retained, 'pi-provider.jsonl'), decisionsFile = join(retained, 'pi-decisions.jsonl'), lifecycleFile = join(retained, 'pi-lifecycle.jsonl');
       await Promise.all([writeFile(providerFile, ''), writeFile(decisionsFile, ''), writeFile(lifecycleFile, '')]);
       const provider = await graphProvider(base), planPath = join(base, 'graph-plan.json');
-      await save(planPath, { mode: name === 'metadata' ? 'metadata' : name === 'native-chain' ? 'native-chain' : name === 'tool-inspect' ? 'prepare-inspect' : ['tool-use', 'cold-pin'].includes(name) ? 'prepare-use' : 'none', ...(name === 'cold-pin' ? { rootPin: fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id, 'main-graph-root') } : {}) });
-      await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database: fixture.graph.database, cacheDir: join(base, 'broker-cache'), prefetch: false, activation: { offline: true }, requestTimeoutMs: 45000, ...(name === 'budget' ? { preparation: { maxNodes: 2 } } : {}) }] });
+      await save(planPath, { mode: name === 'metadata' ? 'metadata' : name === 'native-chain' ? 'native-chain' : name === 'tool-inspect' ? 'prepare-inspect' : ['tool-use', 'cold-pin'].includes(name) ? 'prepare-use' : 'none', ...(name === 'cold-pin' ? { rootPin: fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id) } : {}) });
+      await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, library: fixture.graph.root.record.locator.library_id, cacheDir: join(base, 'broker-cache'), prefetch: false, activation: { offline: true }, requestTimeoutMs: 45000, ...(name === 'budget' ? { preparation: { maxNodes: 2 } } : {}) }] });
       const compactMode = join(base, 'compaction-mode.txt');
       await writeFile(compactMode, 'remove');
       const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: decisionsFile, BROKER_GRAPH_PLAN: planPath, CONTEXT_BROKER_E2E_LIFECYCLE_FILE: lifecycleFile, CONTEXT_BROKER_E2E_COMPACTION_MODE_FILE: compactMode });
@@ -516,8 +516,16 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
               const calls = messages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
               const reads = calls.filter(call => call.name === 'read');
               assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
-              assert.ok(reads[1].arguments.path.startsWith('skill://') && reads[2].arguments.path.includes('file_id=resource-graph-member-1'));
-              observation.observations.push({ directory_target: 'derived from actual root read', resource_target: 'derived from actual Member read; stable file_id resolves renamed path', requires_bodies: 0 });
+              assert.ok(reads[1].arguments.path.startsWith('skill://'));
+              const resourceRef = parseNativeReference(reads[2].arguments.path);
+              assert.equal(resourceRef.selector, fixture.graph.member.record.id); assert.equal(resourceRef.path, fixture.graph.resource.path);
+              if (resourceRef.snapshot !== undefined) assert.equal(resourceRef.snapshot, fixture.graph.member.snapshot_id);
+              const resourceProof = messages.find(message => message.role === 'toolResult' && message.toolCallId === reads[2].id)?.details?.contextBrokerResource;
+              assert.ok(resourceProof); assert.equal(resourceProof.version, 2); assert.equal(resourceProof.delivered_complete_text, true);
+              assert.deepEqual([resourceProof.id, resourceProof.scope, resourceProof.snapshot_id, resourceProof.version_id, resourceProof.path, resourceProof.file_id],
+                [fixture.graph.member.record.id, fixture.graph.member.scope, fixture.graph.member.snapshot_id, fixture.graph.member.version_id, fixture.graph.resource.path,
+                  nativeFileBinding({ fileBindings: fixture.graph.member.file_bindings }, fixture.graph.resource.path)?.file_id]);
+              observation.observations.push({ directory_target: 'derived from actual root read', resource_target: 'derived from actual Member read; exact selected-manifest path with internal native binding', requires_bodies: 0 });
             }
             if (['cold-dollar', 'multi-root', 'renamed-identities'].includes(name)) {
               const prepareCalls = (await rows(fixture.callsPath)).filter(event => event.phase === 'source-entered' && event.command === 'prepare');
@@ -540,8 +548,20 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
               const calls = renamedMessages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
               const reads = calls.filter(call => call.name === 'read');
               assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
-              const resourceId = fixture.graph.member.file_bindings.find(file => file.path === fixture.graph.resource.path).file_id;
-              assert.equal(new URL(reads[2].arguments.path).searchParams.get('file_id'), resourceId);
+              const resourceRef = parseNativeReference(reads[2].arguments.path), member = fixture.graph.member;
+              assert.equal(resourceRef.selector, member.record.id); assert.equal(resourceRef.path, fixture.graph.resource.path);
+              if (resourceRef.snapshot !== undefined) assert.equal(resourceRef.snapshot, member.snapshot_id);
+              const resourceId = nativeFileBinding({ fileBindings: member.file_bindings }, fixture.graph.resource.path)?.file_id;
+              assert.ok(resourceId, 'This controlled native resource has an actual File binding');
+              const resourceResults = renamedMessages.filter(message => message.role === 'toolResult' && message.toolCallId === reads[2].id);
+              assert.equal(resourceResults.length, 1); assert.notEqual(resourceResults[0].isError, true);
+              const resourceProof = resourceResults[0].details?.contextBrokerResource;
+              assert.ok(resourceProof); assert.equal(resourceProof.version, 2); assert.equal(resourceProof.toolCallId, reads[2].id);
+              assert.deepEqual([resourceProof.id, resourceProof.scope, resourceProof.snapshot_id, resourceProof.version_id, resourceProof.path, resourceProof.file_id],
+                [member.record.id, member.scope, member.snapshot_id, member.version_id, fixture.graph.resource.path, resourceId]);
+              assert.equal(resourceProof.ref, fileRef(member.record.id, fixture.graph.resource.path, member.snapshot_id));
+              assert.equal(resourceProof.delivered_complete_text, true); assert.equal(resourceProof.loaded, false);
+              assert.equal(resourceProof.sha256, sha(fixture.graph.resource.content)); assert.equal(resourceProof.bytes, Buffer.byteLength(fixture.graph.resource.content));
               observation.observations.push({ identity_variant: fixture.graph.identityVariant, changed: ['names', 'aliases', 'library_id', 'skill_ids', 'page_ids', 'database_id', 'data_source_id', 'view_id', 'file_ids', 'resource_paths'], first_use: 'complete deduplicated closure', later_native_selection: 'public catalog and body links only; no target in provider plan', required_bodies_in_inspect: 0 });
             }
           }

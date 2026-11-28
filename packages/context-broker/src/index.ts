@@ -1,8 +1,12 @@
+import { createLibrarySelection, createLibraryCommand, libraryContext, type LibraryContext } from "./library-selection";
+import { parseNotionReference, hasExactNativeOwner, nativeReferenceLibrary, withNativeSnapshot } from "./native-reference";
 import { createHash } from "node:crypto";
 import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
-import { activeSelection, activeSources, missingActiveSources, assertRestoredSource, confirmActiveSources } from "./session-active";
-import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
+import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
+import { activeSelection, confirmActiveSources } from "./session-active";
+import { createActiveSourceRestorer } from "./session-recovery";
+import { checkPreparationSignal, isPreparationCancelled, withPreparationDeadline, type SourcePreparationScope, type InputReceipt } from "./skill-preparation";
+import { createCompletionSnapshot, localCompletionCandidate, notionCompletionCandidates, materializationCompletionCandidates, matchSourceMemberCandidate, sourceMemberLookupQuery, sourceMemberQuery, type CompletionCandidate } from "./completion-candidates";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -46,17 +50,21 @@ import {
   dedupeDiscoveryRecords,
   InvocationError,
 } from "./discovery-records";
-import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference } from "./notion-source";
+import { bindNotionSource, discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures, hasEnabledNotionSource } from "./sources";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference, resolveNotionReferenceInSource, resolveNotionRelativeReference, readNotionCandidateSnapshot, materializeCompletionCandidate, discoverNotionSourceMembers, discoverNotionRequiredSourceMembers } from "./notion-source";
+import { createFinalRequestLedger, formatFinalRequestDiagnostic } from "./final-request";
 import { installHostSkills } from "./host-skills";
+import { handleSourceConnection } from "./source-connection";
+import { searchNotionContent } from "./notion-source";
 import { resolveViewDiscovery, createViewCommands, notionDirectorySelections } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
 import { selectPrefetchPlans } from "./prefetch-policy";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
+import { preparePiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import { hostCliScope } from "./host-command";
-import { configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
+import { bundledBuiltinRoot, configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 import { createAcceptedSelections } from "./accepted-selections";
 import { notifyUnavailableReferences, renderUnavailableReferences, unavailableReferenceDetails, type UnavailableReference } from "./unavailable-references";
 import {
@@ -72,6 +80,7 @@ import type {
   ConfigFile,
   ContextEvent,
   ContextInjection,
+  ContentRecord,
   ContextResult,
   DiscoveryResult,
   DiscoveryRecord,
@@ -92,7 +101,10 @@ import type {
   TextContent,
 } from "./types";
 
-import { invocationText } from "./invocation-text";
+import { DOLLAR_SKILL_PATTERN, explicitDollarQueries, invocationText } from "./invocation-text";
+import { materializeExplicitCandidate, needsSourceMaterialization } from "./source-materialization";
+import type { SourceMemberCandidate, SourceMaterializationReceipt } from "./source-materialization-contract";
+import { authorizeExplicitPreparation, authorizedPreparationRoots, inputReceiptIsCurrent, preparationScope, preparationQuery, preparationReceipt, revokePreparationAuthority } from "./preparation-authority";
 
 const CUSTOM_TYPE = "context-broker";
 const BUILTIN_SKILL_PROMPT_TYPE = "skill-prompt";
@@ -106,8 +118,8 @@ const DEFAULT_PATH_MODE: PathMode = "home-relative";
 type SkillInjectionPresentation = Pick<HostCapabilities, "skillInstructions"> & {
   sourceReference?(record: SkillRecord): string | undefined;
   sourceFiles?(record: SkillRecord): readonly { path: string; ref: string }[] | undefined;
+  sourceTaskRole?(record: SkillRecord): { role: "root"; required_by?: readonly string[] } | { role: "required"; required_by: readonly string[] } | undefined;
 };
-const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
   { id: "dollar-skill", match: [{ regex: [{ pattern: DOLLAR_SKILL_PATTERN, flags: "g" }] }] },
   { id: "skill-colon", match: [{ regex: [{ pattern: "^\\s*skill[:：]\\s*(?<query>.+?)\\s*$" }] }] },
@@ -505,7 +517,8 @@ function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = proce
   return uniqueStrings(configuredRoots(config).map((root) => expandPath(root, cwd)));
 }
 
-async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal; directorySelections?: ReturnType<typeof notionDirectorySelections> } = {}): Promise<DiscoveryResult> {
+async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal; directorySelections?: ReturnType<typeof notionDirectorySelections>;
+  onCatalogSettled?: (source: Extract<SourceConfig, { type: "notion" }>) => void } = {}): Promise<DiscoveryResult> {
   options.signal?.throwIfAborted();
   const skills = dedupeLocalSkillPaths([
     ...configuredBundledBuiltinRecords(config),
@@ -673,20 +686,23 @@ function resolveSkillRequests(
   globalRegistry: DiscoveryRecord[] = [],
   config: ConfigFile = {},
   accepted: ReadonlyMap<string, DiscoveryRecord> = new Map(),
+  defaultSourceId?: string,
 ): { injections: ContextInjection[]; unavailable: UnavailableReference[] } {
   const injections: ContextInjection[] = [];
   const unavailable: UnavailableReference[] = [];
   const byRecordKey = new Map<string, ContextInjection>();
   for (const request of requests) {
+    const candidates = defaultSourceId !== undefined && !request.query.includes("@") && !request.query.includes("/")
+      ? globalRegistry.filter(record => record.source !== "notion" || record.sourceId === defaultSourceId) : globalRegistry;
     const selected = request.scope === "global" ? accepted.get(request.query) : undefined;
     const decision: MatchDecision = selected
       ? { decision: "inject", reason: "accepted-selection", query: request.query, record: selected }
       : request.scope === "global"
-      ? matchDiscoveryRecord(request.query, globalRegistry, true)
+      ? matchDiscoveryRecord(request.query, candidates, true)
       : request.scope === "catalog"
         ? matchDiscoveryRecord(
           request.query,
-          globalRegistry.filter((record) => recordKind(record) === "router"),
+          candidates.filter((record) => recordKind(record) === "router"),
           false,
         )
         : matchSkill(request.query, registry.filter(record => recordKind(record) === "skill"), false);
@@ -780,35 +796,43 @@ function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[]
   return Array.isArray(activeMessages) ? activeMessages : [];
 }
 
+function notionWorkflowGuidance(reader: "read" | "CLI read", discovery: "notion_list" | "skill_search" | "CLI list" | undefined,
+  adoption: "notion_use(ref)" | "CLI use EXACT_REF" | "skill_prepare purpose use" | "the supplied prepared host entry" | undefined): string {
+  const action = adoption ? `To apply: ${adoption}, same ref + Requires` : "Inspect only; adoption unavailable";
+  return `Explicit Notion workflow: ${reader} exact ref in chosen source; ${discovery ? `${discovery} there if needed` : "discovery unavailable"}. ${action}. Pending/failed: no builtin fallback. Edited item: inspect only.`;
+}
+
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
   if (activeTools !== undefined) return buildToolGuidance(config, new Set(activeTools));
-  const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-  const scopes = sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()];
+  const sources = (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
+  const scopes = sources.filter(source => source.library !== undefined).map(source => hostCliScope([source]));
   const content = [
     "<ntn-skills-guidance>",
     "Use ntn-skills to discover, read, maintain and sync Skills when requested by the user.",
     "Use the native read tool with the exact advertised location path or skill:// reference to read a selected Skill or resource. Copy that path or reference unchanged from the directory or a successful tool result. When skill_search is available, use it for metadata discovery. These operations work without shell access. The default View controls presentation; authorized exact references outside that View remain readable.",
-    "Native read inspects a selected entry or file, including in hosts that expose only read. For workflow activation, use the host's explicit Skill entry or skill_prepare with exact root refs and purpose use; these prepare the complete Required closure. An already supplied host preparation satisfies this step. For inspection or explanation, use native read or skill_prepare with purpose inspect when available. References alone do not authorize execution; Members remain candidates until selected.",
+    "Native read inspects an entry or file, including in hosts that expose only read. When asked to use or follow a Skill, use the host's explicit Skill entry or skill_prepare with exact root refs and purpose use; these prepare the complete Required closure, including for read-only tasks that forbid scripts or writes. An already supplied host preparation satisfies this step. For inspection or explanation without adoption, use native read or skill_prepare with purpose inspect when available. References alone do not authorize execution; Members remain candidates until selected.",
     "This branch keeps selected versions across compaction and restart. skill_graph exports its identity and delivery evidence. An explicit skill_prepare refresh:true with unfixed roots creates a new selection after complete preparation; it preserves the original tool history and replaces only verified old instructions in the provider context.",
-    "Keep the supplied owner, snapshot and file_id in each reference. Do not guess names, replace an owner, use stale aliases, or search local cache directories. A resource File ID is resolved within its selected owner and snapshot.",
+    "Keep the supplied Library, stable Skill ID and snapshot in each reference. Do not guess names, replace an owner, use stale aliases, or search local cache directories. A resource path resolves only in its selected immutable manifest; File identity stays internal.",
     ...scopes.map(scope => {
-      const database = scope.database ? ["--database", scope.database] : [];
+      const library = scope.library ? ["--library", scope.library] : [];
       return [
-        `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.database ? ` database="${escapeAttribute(scope.database)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
-        `<list-args>${escapeText(JSON.stringify(["list", ...database, "--query", "TERM"]))}</list-args>`,
-        `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...database]))}</read-args>`,
-        `<files-args>${escapeText(JSON.stringify(["files", "SNAPSHOT", ...database]))}</files-args>`,
-        `<resource-read-args>${escapeText(JSON.stringify(["read", "SNAPSHOT", "--path", "RELATIVE", ...database]))}</resource-read-args>`,
+        `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.library ? ` library="${escapeAttribute(scope.library)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
+        `<list-args>${escapeText(JSON.stringify(["list", ...library, "--query", "TERM"]))}</list-args>`,
+        `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...library]))}</read-args>`,
+        `<files-args>${escapeText(JSON.stringify(["files", "SNAPSHOT", ...library]))}</files-args>`,
+        `<resource-read-args>${escapeText(JSON.stringify(["read", "SNAPSHOT", "--path", "RELATIVE", ...library]))}</resource-read-args>`,
         "</cli>",
       ].join("\n");
     }),
-    "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied database scope on list/read/files.",
-    "Each cli scope belongs to the named source and database. Use the scope matching the selected content or explicitly requested target; never choose the first source implicitly. For writes, follow the ordinary bundled maintenance or sync Skill and the same CLI scope.",
-    "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
+    "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied Library root scope on list/read/files.",
+    "Each cli scope belongs to the named source and Library. Choose the write target separately from the workflow's origin; never choose the first source implicitly. Keep selected Notion content in its exact source. Failed or partial discovery does not prove absence.",
+    ...(sources.length ? [packagedWorkflowGuidance(new Set(["read"])), notionWorkflowGuidance("read", "CLI list", "the supplied prepared host entry")] : [`For explicitly requested bootstrap or offline help, append skills get ntn-skills-maintain or skills get ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}. This reads packaged Markdown instructions.`]),
+    ...(!scopes.length ? ["No verified Library scope is ready for remote CLI commands. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library before using remote CLI operations."] : []),
+    "A successful Notion read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output for Notion commands so ok/error and snapshot identity can be checked. Packaged skills get returns Markdown by default; --json is optional.",
     "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
     "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
-    "Read referenced resources only when the current task needs their contents. Resolve a requested relative file directly from a visible Skill directory, without first listing directories or searching the cwd. For CLI resources, use resource-read-args: read SNAPSHOT --path RELATIVE reads the named file on the selected version; files SNAPSHOT lists its inventory when needed. Snapshot arguments avoid shell tools interpreting skill:// URI arguments as filesystem paths. Keep the selected snapshot and supplied database scope.",
-    "Check CLI ok/error before using results. Use COMMAND --help for syntax details or an invalid option. When asked to inspect, introduce or summarize a Skill, describe its instructions as content; do not adopt its workflow, style, prerequisite discovery, repository checks or delegation steps unless the user asks to perform them.",
+    "Read referenced resources only when the current task needs their contents. Resolve a requested relative file directly from a visible Skill directory, without first listing directories or searching the cwd. For CLI resources, pass the quoted canonical fixed reference to read REF or files REF. Keep the selected snapshot and supplied Library root scope.",
+    "Check ok/error in JSON results before using them. Use COMMAND --help for syntax details or an invalid option. When asked to inspect, introduce or summarize a Skill without adoption, describe its instructions as content; do not adopt its workflow, style, prerequisite discovery, repository checks or delegation steps unless the user asks to perform them.",
     "</ntn-skills-guidance>",
   ].join("\n");
   return { customType: CLI_GUIDANCE_TYPE, content, display: false };
@@ -818,21 +842,40 @@ function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "
   return messages.some(message => message.role === "custom" && message.customType === CLI_GUIDANCE_TYPE && textFromContent(message.content) === guidance.content);
 }
 
+/** Package locations are metadata; workflow origin does not select a write target. */
+function packagedWorkflowGuidance(tools: ReadonlySet<string>): string {
+  const root = bundledBuiltinRoot();
+  if (!tools.has("read") && !tools.has("bash")) return "Packaged help requires read or bash";
+  const routes = ["ntn-skills-maintain", "ntn-skills-sync"].map(name => {
+    const entry = root && join(root, name, "SKILL.md");
+    return tools.has("read")
+      ? entry && existsSync(entry) ? `read(${JSON.stringify(entry)})` : `${name} is unavailable; report it`
+      : `run argv ${JSON.stringify([...hostCliScope().command, "skills", "get", name])}`;
+  });
+  return `Default product maintenance/sync: ${routes.join("; ")}. Paired package; no Notion copy needed. Select write source separately; never search other installations.`;
+}
+
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
   if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
+    const cliSources = tools.has("bash") && (tools.has("notion_ctl") || tools.has("tool_search"))
+      ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id)
+      : [];
     const content = [
       "<ntn-skills-guidance>",
-      "Notion directories contain candidates. Local Skills keep their native discovery and read paths. Reuse complete content already available for follow-up questions; still perform read or use explicitly requested by the user.",
-      "Notion's Default View controls its default directory. Native-loader/editor flags in source text (for example disable-model-invocation) describe native installations; follow the Notion tools' reported availability and permissions and the current user intent.",
-      "Loading or selecting a Skill does not authorize executing its workflow. For an introduction or inspection, treat instructions as source content without running their commands, writes or delegation.",
-      "When a Router provides Members, choose those relevant to the task. Read a Member to inspect it, or use it before applying its instructions; the Router directory is only metadata for those Members.",
-      ...(list ? ["Use notion_list to discover Notion Skills by name or description, including authorized entries outside the default View. Copy a returned ref; continue with next_cursor when needed. Partial coverage or a source failure is not an empty directory."] : []),
-      ...(read ? ["Use read to inspect a main entry or a needed resource. Copy its sr:C, sr:S, sr:R or skill:// ref unchanged; never append a path to an sr: handle. Read a named supporting file through its matching resource ref, without listing cache directories. With a canonical skill:// main ref, preserve its owner and snapshot, replace only the logical file path, and do not reuse the main file_id for another file. Inspection does not load Requires or activate a workflow."] : []),
-      ...(use ? ["Use notion_use with ref to apply a Skill's instructions: it loads that root and its complete Requires. Choosing a Skill to introduce or inspect uses read, even when another Skill is active. Ref may be an array for several Skills needed together. Members remain candidates until selected. Call notion_use directly, outside Code mode. Explicit refresh:true with unfixed refs changes the selection only after complete success."] : []),
-      ...((!read || !list) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
+      "Local @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.",
+      "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
+      list ? "notion_list: beyond the default View. Named Notion existence/availability: query:name,refresh:true; metadata only, keeping pins. Also after writes. Check freshness/coverage; failed/partial/offline is not absence." : "Failed/partial discovery is not absence.",
+      ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
+      ...(use ? ["Use/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
+      packagedWorkflowGuidance(tools),
+      ...(read || tools.has("bash") ? [notionWorkflowGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
+        use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
+      ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
+      ...(cliSources.length ? [`CLI management: ${tools.has("notion_ctl") ? "notion_ctl cli_source" : "tool_search for notion_ctl, then its cli_source"} (null: accepted Library; ID: Source). ${JSON.stringify(cliSources)}. Use returned command/scope, never a global CLI. No execution or authorization.`] : []),
+      ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.library !== undefined).map(source => {
         const scope = hostCliScope([source]);
-        return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : [])] })}. CLI refs must be canonical; session sr: handles belong to this Pi session.`;
+        return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, library: scope.library, operations: [...(!list || !use ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : []), ...(!use ? ["use REF --json"] : [])] })}. CLI refs must be canonical; match the selected record identity in this source's CLI list. Session sr: handles belong to this Pi session.`;
       }) : []),
       ...(!read && !tools.has("bash") ? ["Inspection and resource reading are unavailable; report missing content rather than claiming it was read."] : []),
       "</ntn-skills-guidance>",
@@ -840,38 +883,44 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     return { customType: CLI_GUIDANCE_TYPE, content, display: false };
   }
   const read = tools.has("read"), search = tools.has("skill_search"), prepare = tools.has("skill_prepare"), graph = tools.has("skill_graph"), bash = tools.has("bash");
-  const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-  const fallback = bash && (!read || !search);
-  const cliList = !search || !read && !prepare;
+  const sources = (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
+  const fallback = bash && (!read || !search || !prepare);
+  const cliList = !search || !prepare;
   const content = [
     "<ntn-skills-guidance>",
     "Skill directories describe candidates, not loaded bodies. Reuse a complete body already supplied by the host or a successful read for ordinary follow-up questions, without rereading it or probing packages, executables, prerequisites or cache directories. Still perform discovery, read, inspect or use operations explicitly requested by the current user through an available, authorized route.",
-    "Loading or selecting a Skill does not authorize executing its workflow. For inspection, introduction or explanation, treat its instructions as source content; do not perform its prerequisite checks, commands, writes or delegation unless the user requested those actions. Distinguish documented procedures from checks actually performed.",
-    ...(read ? ["Use read with an exact advertised sr:C, sr:S, sr:R or skill:// reference, or a visible location path. Preserve owner, scope, snapshot and file identity. Do not append paths to sr: handles. For a named relative resource, prefer its supplied fixed resource ref or resolve the path directly under the supplied skill-directory (expand ~), without listing directories or searching the cwd. When using a canonical skill:// main ref, preserve its owner and snapshot, replace only the logical file path, and do not reuse the main file_id for another file. Read resources only when their contents are needed."] : []),
+    "Loading or selecting a Skill does not authorize executing its workflow. Use/follow requests still select for read-only tasks; forbidding scripts or writes limits execution only. For inspection, introduction or explanation without adoption, treat its instructions as source content; do not perform its prerequisite checks, commands, writes or delegation unless the user requested those actions. Distinguish documented procedures from checks actually performed.",
+    ...(read ? ["Use read with an exact advertised sr:C, sr:S, sr:R or skill:// reference, or a visible location path. Preserve Library, stable Skill ID, exact path and selected snapshot. Do not append paths to sr: handles. Prefer a supplied fixed resource ref. For an authored relative file link or a contextual skill:// reference, pass its original path and from: the fixed ref of the actual containing file. A nested document uses its resource ref, not the main Skill ref. Source-backed cross-Skill links use the shared Source mapping; do not guess neighboring cache paths. Relative reads only inspect, keep the target's own selected version, and do not load Requires. Local filesystem resources resolve under their visible Skill directory. Read resources only when their contents are needed."] : []),
     ...(search ? ["Use skill_search for metadata discovery, including authorized entries outside the default View. A View is presentation, not an access restriction. Select an exact candidate before reading its body; ambiguity and source failures are not empty results."] : []),
-    ...(prepare ? ["Use skill_prepare with exact roots and purpose inspect to inspect only those roots, or purpose use to prepare the complete Required closure for an authorized workflow. An existing preparation does not replace a skill_prepare operation explicitly requested by the current user. Members remain candidates until selected; inspection does not activate Requires or authorize execution."] : ["An explicit host Skill selection may already supply its prepared Required closure. Do not infer that inspecting one entry prepared its dependencies."]),
+    ...(prepare ? ["Use skill_prepare with exact roots and purpose inspect to inspect only those roots, or purpose use to select the complete Required closure when asked to use or follow a Skill. An existing preparation does not replace a skill_prepare operation explicitly requested by the current user. Members remain candidates until selected; inspection does not activate Requires or authorize execution."] : ["An explicit host Skill selection may already supply its prepared Required closure. Do not infer that inspecting one entry prepared its dependencies."]),
     ...(graph ? ["skill_graph exports this branch's fixed identities and delivery evidence. Selected versions persist across restart and compaction; use existing supplied bodies and resource refs."] : []),
     ...(prepare ? ["An explicit skill_prepare refresh:true with unfixed roots starts a new selection only after complete preparation; it does not rewrite original tool history."] : []),
+    ...(sources.length ? [packagedWorkflowGuidance(tools)] : []),
+    ...(sources.length && (read || bash) ? [notionWorkflowGuidance(read ? "read" : "CLI read", search ? "skill_search" : bash ? "CLI list" : undefined,
+      prepare ? "skill_prepare purpose use" : bash ? "CLI use EXACT_REF" : undefined)] : []),
     ...(bash && graph && sources.length ? [
-      `For a user-requested maintenance or sync action that requires the CLI, request skill_graph with cli_source set to the exact configured source ID. Available source IDs: ${JSON.stringify(sources.map(source => source.id))}. This returns the host-local command prefix and database scope without executing anything or granting authorization. Append the requested command's arguments to that prefix; do not assume a global ntn-skills command is installed or probe package paths. Choose the intended target source explicitly, never the first source.`,
+      `For a user-requested maintenance or sync action that requires the CLI, request skill_graph with cli_source:null for this accepted turn’s Library, or an exact configured source ID for another explicit target. Available source IDs: ${JSON.stringify(sources.map(source => source.id))}. This returns the host-local command prefix and Library root scope without executing anything or granting authorization. Append the requested command's arguments to that prefix; do not assume a global ntn-skills command is installed or probe package paths. Choose the intended target source explicitly, never the first source.`,
     ] : []),
     ...(fallback ? [
-      "The following CLI fallback covers currently unavailable native discovery/read operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied database scope; keep JSON output and check ok/error.",
+      "The following CLI fallback covers currently unavailable native discovery/read/use operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied Library root scope; keep JSON output and check ok/error.",
+      "Failed or partial discovery does not prove absence. An explicitly selected Notion workflow keeps its source and identity; failure never switches it to a packaged workflow.",
+      ...(!sources.some(source => source.library !== undefined) ? [`No verified Library scope is ready for remote CLI operations. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library. Explicit bootstrap/offline help can append skills get ntn-skills-maintain or skills get ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}.`] : []),
       "CLI commands cannot resolve session sr: handles. Use a canonical ref returned by that source's CLI metadata or a fixed snapshot/path from a successful preparation. If native read and prepare are unavailable, use this source's list command to obtain the same candidate's canonical ref, matching its exact record identity rather than guessing a name.",
-      ...(sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()]).map(scope => {
-        const database = scope.database ? ["--database", scope.database] : [];
+      ...sources.filter(source => source.library !== undefined).map(source => hostCliScope([source])).map(scope => {
+        const library = scope.library ? ["--library", scope.library] : [];
         return [
-          `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.database ? ` database="${escapeAttribute(scope.database)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
-          ...(cliList ? [`<list-args>${escapeText(JSON.stringify(["list", ...database, "--query", "TERM"]))}</list-args>`] : []),
+          `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.library ? ` library="${escapeAttribute(scope.library)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
+          ...(cliList ? [`<list-args>${escapeText(JSON.stringify(["list", ...library, "--query", "TERM"]))}</list-args>`] : []),
+          ...(!prepare ? [`<use-args>${escapeText(JSON.stringify(["use", "EXACT_REF", ...library, "--json"]))}</use-args>`] : []),
           ...(!read ? [
-            `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...database]))}</read-args>`,
-            `<files-args>${escapeText(JSON.stringify(["files", "SNAPSHOT", ...database]))}</files-args>`,
-            `<resource-read-args>${escapeText(JSON.stringify(["read", "SNAPSHOT", "--path", "RELATIVE", ...database]))}</resource-read-args>`,
+            `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...library]))}</read-args>`,
+            `<files-args>${escapeText(JSON.stringify(["files", "EXACT_REF", ...library]))}</files-args>`,
+            `<resource-read-args>${escapeText(JSON.stringify(["read", "FIXED_RESOURCE_REF", ...library]))}</resource-read-args>`,
           ] : []),
           "</cli>",
         ].join("\n");
       }),
-      "Append a fallback argument array to its exact cli command prefix. Replace only TERM/EXACT_REF/SNAPSHOT/RELATIVE with selected task values; do not reinterpret skill:// references as filesystem paths.",
+      "Append a fallback argument array to its exact cli command prefix. Replace only TERM/EXACT_REF/FIXED_RESOURCE_REF with selected task values; quote canonical skill:// references without treating them as filesystem paths.",
     ] : []),
     ...(!read && !prepare && !bash ? ["No Skill body/resource read route is currently active. Use already supplied content and report unavailable content instead of inventing a command or claiming it was read."] : []),
     ...(!search && !bash ? ["No metadata discovery route is currently active. Do not treat unavailable discovery as an empty catalog."] : []),
@@ -881,8 +930,9 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
 }
 
 /** Only the provider projection changes; original custom entries and source text stay intact. */
-function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "role" | "timestamp">): AgentMessage[] | undefined {
+function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "role" | "timestamp"> | undefined): AgentMessage[] | undefined {
   const owned = messages.filter(message => message.role === "custom" && message.customType === CLI_GUIDANCE_TYPE);
+  if (!guidance) return owned.length ? messages.filter(message => !owned.includes(message)) : undefined;
   if (owned.length === 1 && textFromContent(owned[0]!.content) === guidance.content) return undefined;
   let placed = false;
   const projected = messages.flatMap(message => {
@@ -895,18 +945,22 @@ function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessag
   return projected;
 }
 
-function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions): void {
+function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions,
+  configForContext?: (ctx: ExtensionContext) => ConfigFile): void {
   const knownPi = paths.host === "pi" && typeof pi.getActiveTools === "function";
-  const legacy = knownPi ? undefined : buildCliGuidance(config);
-  const guidance = () => knownPi ? buildCliGuidance(config, pi.getActiveTools!()) : legacy!;
+  const enabled = paths.host !== "pi" || hasEnabledNotionSource(config);
+  const legacy = !enabled || knownPi || configForContext ? undefined : buildCliGuidance(config);
+  const guidance = (ctx: ExtensionContext) => !enabled ? undefined : knownPi
+    ? buildCliGuidance(configForContext?.(ctx) ?? config, pi.getActiveTools!())
+    : configForContext ? buildCliGuidance(configForContext(ctx)) : legacy;
   pi.on("before_agent_start", (_event, ctx) => {
-    const current = guidance();
-    if (!hasCliGuidance(messagesFromActiveSessionContext(ctx), current)) return { message: current };
+    const current = guidance(ctx);
+    if (current && !hasCliGuidance(messagesFromActiveSessionContext(ctx), current)) return { message: current };
     return undefined;
   });
-  const project = (event: ContextEvent) => {
-    const current = guidance();
-    if (!knownPi) return hasCliGuidance(event.messages, current) ? undefined
+  const project = (event: ContextEvent, ctx: ExtensionContext) => {
+    const current = guidance(ctx);
+    if (!knownPi && current) return hasCliGuidance(event.messages, current) ? undefined
       : { messages: [...event.messages, { ...current, role: "custom", timestamp: Date.now() }] };
     const messages = projectCliGuidance(event.messages, current);
     return messages ? { messages } : undefined;
@@ -1009,8 +1063,10 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile, pres
     // materialized yet. A cache directory is neither an inventory nor an entrypoint.
     const files = (presentation.sourceFiles?.(skill) ?? skill.preparationDirectory?.files ?? [])
       .filter(file => file.path !== skill.entrypoint).map(({ path, ref }) => ({ path, ref }));
+    const taskRole = presentation.sourceTaskRole?.(skill);
     return [
       `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" ref="${escapeAttribute(ref)}">`,
+      ...(taskRole ? [`<task-role>${escapeText(JSON.stringify(taskRole))}</task-role>`] : []),
       ...(files.length ? [`<resources>${escapeText(JSON.stringify(files))}</resources>`] : []),
       "<body>",
       escapeText(skill.body),
@@ -1022,7 +1078,7 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile, pres
     `<!-- context-broker:${recordKind(skill)}:${skill.normalizedName}:${formatPathForPayload(skill.path, config)} -->`,
     `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" path="${escapeAttribute(formatPathForPayload(skill.path, config))}">`,
     ...(skill.sourceId && skill.ref && skill.snapshotId ? [
-      `<skill-ref>${escapeText(`${skill.ref}?snapshot=${skill.snapshotId}`)}</skill-ref>`,
+      `<skill-ref>${escapeText(withNativeSnapshot(skill.ref, skill.snapshotId))}</skill-ref>`,
       `<snapshot-id>${escapeText(skill.snapshotId)}</snapshot-id>`,
     ] : []),
     ...((recordKind(skill) === "skill" ? presentation.skillInstructions?.(skill, {
@@ -1044,8 +1100,14 @@ function buildInjectedPayloadFromInjections(injections: ContextInjection[], conf
   const records = injections.map((injection, index) => {
     const segment = segments[index]!, start = segment.indexOf("<body>\n");
     const proof = start < 0 ? undefined : sourceDeliveryReceipt(injection.record, content, "xml", offset + start + "<body>\n".length);
+    const resourcesStart = segment.indexOf("<resources>"), resourcesEnd = segment.indexOf("</resources>");
+    const resources = proof && resourcesStart >= 0 && resourcesEnd > resourcesStart && resourcesEnd < start
+      ? segment.slice(resourcesStart, resourcesEnd + "</resources>".length) : undefined;
+    const resourcesDelivery = resources === undefined ? undefined : { start: offset + resourcesStart,
+      end: offset + resourcesEnd + "</resources>".length, sha256: createHash("sha256").update(resources).digest("hex"), bytes: Buffer.byteLength(resources) };
     offset += segment.length + 1;
     return { ...recordDetail(injection, config), ...proof,
+      ...(resourcesDelivery ? { resourcesDelivery } : {}),
       ...(proof && injection.record.preparationDirectory ? { directory: injection.record.preparationDirectory } : {}) };
   });
   return {
@@ -1243,7 +1305,7 @@ async function invokeBeforeAgentStart(
   const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog")
     ? await buildDollarRegistryForContext(ctx, dollarRegistryPromise)
     : [];
-  const resolved = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config, accepted);
+  const resolved = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config, accepted, libraryContext(ctx)?.local()?.source.id);
   const injections = [...new Map(resolved.injections.filter(injection => recordKind(injection.record) !== "prompt")
     .map(injection => [sourceContentIdentity(injection.record), injection])).values()];
   const selected = new Set(injections.map(injection => sourceContentIdentity(injection.record)));
@@ -1293,6 +1355,8 @@ function contextBrokerCommandCompletions(argumentPrefix: string) {
     { value: "doctor", label: "doctor", description: "Diagnose config, catalogs, names, aliases, and routers" },
     { value: "refresh", label: "refresh", description: "Refresh metadata and prepare default source snapshots in background" },
     { value: "sources", label: "sources", description: "Show local source preparation state and freshness" },
+    { value: "connect ", label: "connect", description: "Preview or apply SOURCE LIBRARY_ROOT --config ABSOLUTE_FILE to connect a Notion source" },
+    { value: "library", label: "library", description: "Show current Library or select ROOT_ID, Notion URL, or default for subsequent submissions" },
     { value: "views", label: "views", description: "List Notion Views in API order with exact selection commands" },
     { value: "view", label: "view", description: "Show current View or select [source-id] <view-id|URL|default> for this session" },
     { value: "roots", label: "roots", description: "Show skill roots" },
@@ -1322,7 +1386,7 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
   const sourceHealth: string[] = [];
   diagnostics.push(...formatSourceFailures(failures));
   for (const source of normalizeSources(config.sources) ?? []) {
-    if (source.enabled === false || source.type !== "notion" || source.command || failures.some(failure => failure.sourceId === source.id)) continue;
+    if (source.enabled === false || source.type !== "notion" || failures.some(failure => failure.sourceId === source.id)) continue;
     try {
       const health = await diagnoseNotionSource(source, cwd);
       sourceHealth.push(`Source ${source.id}: direct Notion API ${health.version}, authentication available`);
@@ -1384,7 +1448,7 @@ function formatExplainRecord(record: DiscoveryRecord): string {
   ].filter(Boolean).join("\n");
 }
 
-async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext, config: ConfigFile, getDollarRegistry: (cwd?: string) => Promise<DiscoveryRecord[]>, registryPromise: Promise<SkillRecord[]>, refresh: (ctx: ExtensionContext) => Promise<void>, paths: HostPathOptions): Promise<void> {
+async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext, config: ConfigFile, getDollarRegistry: (cwd?: string, ctx?: ExtensionContext) => Promise<DiscoveryRecord[]>, registryPromise: Promise<SkillRecord[]>, refresh: (ctx: ExtensionContext) => Promise<void>, paths: HostPathOptions): Promise<void> {
   const [command = "status", ...rest] = args.trim().split(/\s+/).filter(Boolean);
   if (command === "refresh" && refresh) {
     await refresh(ctx);
@@ -1405,23 +1469,23 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
   }
   if (command === "find") {
     const query = rest.join(" ");
-    const registry = await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd));
+    const registry = await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd, ctx));
     const { records: rawRegistry } = await buildRawDollarRegistry(config, ctx.cwd, paths);
     ctx.ui?.notify?.(formatFindDiagnostics(query, registry, rawRegistry), "info");
     return;
   }
   if (command === "explain") {
     const query = rest.join(" ");
-    const registry = await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd));
+    const registry = await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd, ctx));
     const decision = matchDiscoveryRecord(query, registry, false);
     ctx.ui?.notify?.(decision.decision === "inject" ? formatExplainRecord(decision.record) : `context-broker explain: no unique record for ${query}`, decision.decision === "inject" ? "info" : "warning");
     return;
   }
   const registry = await registryPromise;
-  const dollarRegistry = await getDollarRegistry(ctx.cwd);
+  const dollarRegistry = await getDollarRegistry(ctx.cwd, ctx);
   const routers = dollarRegistry.filter((record) => recordKind(record) === "router").length;
   ctx.ui?.notify?.(
-    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, roots, catalogs, find <query>, explain <name>`,
+    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, library [ROOT_ID|NOTION_URL|default], roots, catalogs, find <query>, explain <name>, request`,
     registry.length > 0 || dollarRegistry.length > 0 ? "info" : "warning",
   );
 }
@@ -1430,11 +1494,31 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const adapter = pi.pi !== undefined ? createOmpHostAdapter(pi) : createPiHostAdapter(pi);
   const paths = adapter.paths;
   const config = readConfig(paths);
-  const acceptedSelections = createAcceptedSelections();
+  const librarySelection = createLibrarySelection(config);
+  const acceptedSelections = createAcceptedSelections<CompletionCandidate>(candidate => candidate.token);
+  const acceptedRecords = new WeakMap<InputReceipt, Promise<ReadonlyMap<string, DiscoveryRecord>>>();
+  const materializedInputs = new WeakMap<InputReceipt, Set<string>>();
+  const submissionRecords = (receipt: InputReceipt | undefined, signal?: AbortSignal, preparation?: SourcePreparationScope): Promise<ReadonlyMap<string, DiscoveryRecord>> => {
+    if (!receipt) return Promise.resolve(new Map());
+    let pending = acceptedRecords.get(receipt);
+    if (!pending) {
+      pending = (async () => {
+        const entries = new Map<string, DiscoveryRecord>();
+        for (const [token, candidate] of acceptedSelections.forSubmission(receipt)) {
+          const record = candidate.origin === "source_member"
+            ? await materializeInputMember(candidate.member, candidate.source, receipt, token, receipt.ctx, signal, preparation)
+            : await materializeCompletionCandidate(candidate, receipt.ctx.cwd ?? process.cwd(), signal);
+          entries.set(token, record);
+        }
+        return entries;
+      })();
+      acceptedRecords.set(receipt, pending);
+    }
+    return pending;
+  };
   for (const event of ["session_shutdown", "session_before_switch", "session_before_branch", "session_before_tree"] as const) {
     pi.on(event, (_event, ctx) => acceptedSelections.clear(ctx));
   }
-  installSkillGuidance(pi, config, paths);
   const sourceRuntime = createSourceRuntime(
     (record, signal) => loadSourceSkill(record, config, process.cwd(), { signal }), 2, 32,
     (plan, signal) => prefetchNotionSkills(plan, process.cwd(), signal),
@@ -1448,19 +1532,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     | { status: "failed"; promise: Promise<DiscoveryResult>; error: unknown };
   const dollarRegistryByCwd = new Map<string, CatalogState>();
   const catalogOwner = new AbortController();
-  // Invalidated cache entries can disappear while their source request is still
-  // running. Retain ownership until the actual operation has settled.
-  const pendingCatalogs = new Set<Promise<unknown>>();
   const ownCatalog = <T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> => {
     const owned = signal ? AbortSignal.any([catalogOwner.signal, signal]) : catalogOwner.signal;
-    const promise = (async () => {
-      owned.throwIfAborted();
-      const result = await run(owned);
+    const promise = withPreparationDeadline(owned, async bounded => {
+      bounded.throwIfAborted();
+      const result = await run(bounded);
       owned.throwIfAborted();
       return result;
-    })();
-    pendingCatalogs.add(promise);
-    void promise.then(() => pendingCatalogs.delete(promise), () => pendingCatalogs.delete(promise));
+    });
+    // Cache invalidation may drop the caller before the producer settles.
+    // Observe rejection without making shutdown wait for that producer.
+    void promise.catch(() => undefined);
     return promise;
   };
   const sourceChanges = new Map<string, number>();
@@ -1470,8 +1552,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const autocompleteUis = new WeakSet<object>();
   let menuContext: ExtensionContext | undefined;
   let menuGeneration = 0;
-  const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number }>();
+  const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number; forceViewRefresh?: true }>();
   const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
+  const catalogKey = (cwd: string, ctx?: ExtensionContext) => JSON.stringify([catalogCwd(cwd), librarySelection.key(ctx)]);
+  const directoryConfig = async (ctx?: ExtensionContext) => { const selected = await librarySelection.identity(ctx); return { ...config, sources: selected ? [selected.source] : [] }; };
   const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
   const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
     if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
@@ -1492,78 +1576,51 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     });
     return promise;
   };
-  const getCatalog = (cwd = process.cwd(), ctx = menuContext) => {
+  const getCatalog = (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
     if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
-    const key = catalogCwd(cwd);
+    ctx = librarySelection.capture(ctx ?? { cwd });
+    if (libraryContext(ctx)?.local() === undefined) return librarySelection.identity(ctx).then(() => getCatalog(cwd, ctx));
+    const key = catalogKey(cwd, ctx);
     const entry = dollarRegistryByCwd.get(key);
     const changes = unseenChanges(key);
     if (entry && (entry.status === "pending" || !changes.size || Date.now() < (notionRetryAt.get(key) ?? 0))) return entry.promise;
     const generation = { menu: menuGeneration, refresh: refreshGeneration };
-    const promise = ownCatalog(signal => buildDiscoveryRegistry(config, key, { paths, signal, stale: true,
-      refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(config, ctx) })).then(result => {
+    const selectedContext = ctx;
+    const promise = ownCatalog(async signal => buildDiscoveryRegistry(await librarySelection.config(selectedContext), catalogCwd(cwd), { paths, signal, stale: true,
+      refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext),
+      onCatalogSettled: catalogCompletionNotification(selectedContext, generation) })).then(result => {
       pairedCatalogGenerations.set(result, generation);
       return result;
     });
     return publishCatalog(key, promise, changes);
   };
-  installCliWriteInvalidation(pi, {
-    sources: config.sources ?? [],
-    records: () => [...dollarRegistryByCwd.values()].flatMap(entry => entry.status === "ready"
-      ? entry.result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)) : []),
-    changed(sourceIds, ctx) {
-      // Publication generations fence old directory requests without cancelling an accepted draft.
-      refreshGeneration++;
-      for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
-      for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {
-        dollarRegistryByCwd.delete(cwd);
-        notionRefresh.delete(cwd);
-        notionRetryAt.delete(cwd);
-      }
-      sourceRuntime.forgetSources(sourceIds);
-    },
-  });
-  const getDollarRegistry = async (cwd?: string) => (await getCatalog(cwd)).records;
-  const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
-  const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
-  const dollarMenu = async (ctx: ExtensionContext): Promise<DollarMenu> => {
-    const systemPrompt = ctx.getSystemPrompt?.() ?? "";
-    const registryContext: ExtensionContext = { getSystemPrompt: () => systemPrompt };
-    const cwd = catalogCwd(ctx.cwd ?? process.cwd());
-    const pendingCatalog = getCatalog(cwd);
-    const state = dollarRegistryByCwd.get(cwd)!;
-    if (state.status === "failed") return { records: [], notice: catalogError(state.error) };
-    if (state.status === "pending") return {
-      // Source collisions can change local selection tokens; do not offer an unqualified guess.
-      records: config.sources?.some(source => source.enabled !== false) ? [] : await buildDollarRegistryForContext(registryContext, registryPromise),
-      notice: notionSources().length ? "Reading Notion catalog" : "Reading source catalog",
-      followUp: pendingCatalog.then(async result => ({
-        records: await buildDollarRegistryForContext(registryContext, Promise.resolve(result.records)),
-        notice: formatSourceFailures(result.failures).join("\n") || undefined,
-      })).catch(error => ({ records: [], notice: catalogError(error) })),
-    };
-    const current = state.result;
-    const records = await buildDollarRegistryForContext(registryContext, Promise.resolve(current.records));
-    const sources = notionSources();
-    const sourceIds = sources.map((source) => source.id);
-    const offline = sources.length > 0 && sources.every((source) => source.discovery?.offline);
-    const action = notionCatalogAction({
-      offline,
-      sourceIds,
-      observations: current.lists ?? [],
-      failedSourceIds: current.failures.map((failure) => failure.sourceId),
-      now: Date.now(),
-      retryAt: notionRetryAt.get(cwd),
-    });
-    const failureNotice = formatSourceFailures(current.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n");
-    if (action !== "refresh") return { records, notice: action === "wait" && failureNotice ? failureNotice : undefined };
-    let pending = notionRefresh.get(cwd);
+  const invalidateCatalogSources = (sourceIds: readonly string[], ctx: ExtensionContext) => {
+    // Fence older metadata requests without cancelling an accepted draft or its pins.
+    refreshGeneration++;
+    for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
+    for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {
+      dollarRegistryByCwd.delete(cwd);
+      notionRefresh.delete(cwd);
+      notionRetryAt.delete(cwd);
+    }
+  };
+  const refreshCatalog = async (cwd: string, current: DiscoveryResult, ctx?: ExtensionContext): Promise<DiscoveryResult> => {
+    ctx = librarySelection.capture(ctx ?? { cwd });
+    const key = catalogKey(cwd, ctx);
+    const source = (await librarySelection.identity(ctx))?.source;
+    const sourceIds = source && !source.discovery?.offline ? [source.id] : [];
+    let pending = notionRefresh.get(key);
     if (!pending) {
       const generation = refreshGeneration;
-      const changes = unseenChanges(cwd);
+      const ownerMenu = menuGeneration;
+      const selectedContext = ctx;
+      const changes = unseenChanges(key);
       pending = ownCatalog(async signal => {
         try {
-          const next = await buildDiscoveryRegistry(config, cwd, { paths, signal, refreshSourceIds: [...changes.keys()] });
-          if (generation !== refreshGeneration) return await getCatalog(cwd);
+          const next = await buildDiscoveryRegistry(await librarySelection.config(selectedContext), cwd, { paths, signal, refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext),
+            onCatalogSettled: catalogCompletionNotification(selectedContext, { menu: ownerMenu, refresh: generation }) });
+          if (generation !== refreshGeneration) return await getCatalog(cwd, selectedContext);
+          pairedCatalogGenerations.set(next, { menu: ownerMenu, refresh: generation });
           const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
           const unsafe = next.failures.some(failure => sourceIds.includes(failure.sourceId) && ["AUTH_REQUIRED", "ACCESS_DENIED", "CACHE_SCOPE_UNAVAILABLE", "SOURCE_IDENTITY_MISMATCH"].includes(failure.code));
           const published = failed && !unsafe && current.records.some((record) => record.source === "notion")
@@ -1576,47 +1633,271 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             failedSourceIds: published.failures.map((failure) => failure.sourceId),
             now: Date.now(),
           }) === "refresh";
-          if (failed || stillStale) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
-          else notionRetryAt.delete(cwd);
-          publishCatalog(cwd, Promise.resolve(published), changes);
+          if (failed || stillStale && !published.lists?.every(list => list.maxAgeMs === 0)) notionRetryAt.set(key, Date.now() + notionCatalogRetryGapMs);
+          else notionRetryAt.delete(key);
+          publishCatalog(key, Promise.resolve(published), changes);
           return published;
         } finally {
-          if (notionRefresh.get(cwd) === pending) notionRefresh.delete(cwd);
+          if (notionRefresh.get(key) === pending) notionRefresh.delete(key);
         }
       });
-      notionRefresh.set(cwd, pending);
+      notionRefresh.set(key, pending);
     }
-    const hasNotion = current.records.some((record) => record.source === "notion");
-    return {
-      records,
-      notice: hasNotion ? "Updating Notion catalog" : failureNotice || "Reading Notion catalog",
-      followUp: pending.then(async (next) => ({
-        records: await buildDollarRegistryForContext(registryContext, Promise.resolve(next.records)),
-        notice: formatSourceFailures(next.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n") || undefined,
-      })).catch(error => ({ records, notice: catalogError(error) })),
-    };
+    return pending;
   };
-  const retireMenuContext = () => { menuGeneration++; menuContext = undefined; };
+  const currentCatalog = async (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
+    ctx = librarySelection.capture(ctx ?? { cwd });
+    const result = await getCatalog(cwd, ctx), key = catalogKey(cwd, ctx);
+    const source = (await librarySelection.identity(ctx))?.source;
+    const sourceIds = source && !source.discovery?.offline ? [source.id] : [];
+    const action = notionCatalogAction({ offline: false, sourceIds, observations: result.lists ?? [],
+      failedSourceIds: result.failures.map(failure => failure.sourceId), now: Date.now(), retryAt: notionRetryAt.get(key) });
+    return action === "refresh" ? refreshCatalog(catalogCwd(cwd), result, ctx) : result;
+  };
+  const defaultRecords = async (records: DiscoveryResult["records"], ctx?: ExtensionContext) => {
+    const selected = await librarySelection.identity(ctx);
+    return records.filter(record => record.source !== "notion" || record.sourceId === selected?.source.id);
+  };
+  const explicitCatalogs = new WeakMap<LibraryContext, Map<string, Promise<DiscoveryResult<SkillRecord>>>>();
+  const getDollarRegistry = async (cwd = process.cwd(), ctx = menuContext, text?: string, signal?: AbortSignal) => {
+    ctx = librarySelection.capture(ctx ?? { cwd });
+    const selected = await librarySelection.identity(ctx);
+    const records = await defaultRecords((await currentCatalog(cwd, ctx)).records, ctx);
+    if (!selected || !text) return records;
+    const queries = parseInvocations(text, configuredRules(config)).filter(request => request.scope === "global" || request.scope === "catalog").map(request => request.query);
+    const requested = selected.sources.filter(source => source.id !== selected.source.id && queries.some(query => {
+      const namespace = source.namespace ?? source.id;
+      return query.includes("@") ? query.split("@").at(-1) === namespace : query.startsWith(namespace + "/");
+    }));
+    if (!requested.length) return records;
+    const context = libraryContext(ctx)!;
+    let catalogs = explicitCatalogs.get(context);
+    if (!catalogs) { catalogs = new Map(); explicitCatalogs.set(context, catalogs); }
+    const results = await Promise.all(requested.map(source => {
+      const key = JSON.stringify([source.id, source.library, refreshGeneration]);
+      let pending = catalogs!.get(key);
+      if (!pending) {
+        pending = ownCatalog(owned => discoverSourceCatalog({ sources: [source] }, cwd, { signal: owned }), signal);
+        catalogs!.set(key, pending);
+      }
+      return pending;
+    }));
+    signal?.throwIfAborted();
+    // Foreign directories belong only to this accepted invocation. They never
+    // publish into the default menu, Profile or native metadata.
+    return [...records, ...results.flatMap(result => result.records)];
+  };
+  const submissionRegistry = (ctx: ExtensionContext, text: string, accepted: ReadonlyMap<string, DiscoveryRecord>, signal?: AbortSignal) =>
+    parseInvocations(text, configuredRules(config)).some(request => request.scope !== "configured" && !accepted.has(request.query))
+      ? getDollarRegistry(ctx.cwd, ctx, text, signal) : Promise.resolve([]);
+  async function materializationReceived(result: SourceMaterializationReceipt, source: Extract<SourceConfig, { type: "notion" }>, receipt: InputReceipt, ctx: ExtensionContext, signal?: AbortSignal, preparation?: SourcePreparationScope): Promise<void> {
+    invalidateCatalogSources([source.id], ctx);
+    sourceRuntime.forgetSources([source.id]);
+    if (result.status === "ready" || result.status === "already_ready") {
+      const ids = materializedInputs.get(receipt) ?? new Set<string>();
+      for (const record of result.records) ids.add(JSON.stringify([source.id, result.scope, record.id]));
+      materializedInputs.set(receipt, ids);
+    }
+    const owner = completionOwner;
+    if (owner && menuIsCurrent(owner) && libraryContext(owner.ctx)?.local()?.root === result.library_id) {
+      // Retire rejected stale candidates as well as published ones. Ready
+      // read-back remains partial metadata and uses exact physical qualifiers.
+      owner.snapshot.accept(owner.snapshot.begin("refresh"),
+        materializationCompletionCandidates(owner.snapshot.read().candidates, source, result));
+    }
+    if (inputReceiptIsCurrent(receipt, ctx, signal)) pi.appendEntry?.("context-broker-materialization", {
+      version: 1, input_receipt: receipt.id, request_id: result.request_id, operation_id: result.operation_id,
+      source_id: source.id, library_id: result.library_id, scope: result.scope, manager_scope: result.manager_scope, status: result.status,
+      target: result.target, authorization_root: result.authorization_root, affected_skill_ids: result.affected_skill_ids, source_revisions: result.source_revisions, effects: result.effects,
+    });
+    if ((result.status !== "ready" && result.status !== "already_ready") || !inputReceiptIsCurrent(receipt, ctx, signal)) return;
+    const selectedContext = librarySelection.capture(ctx), cwd = catalogCwd(ctx.cwd ?? process.cwd());
+    const selected = await librarySelection.identity(selectedContext);
+    const isDefault = selected?.source.id === source.id && selected.root === result.library_id;
+    // Management retires the SDK's persistent catalog. Its receipt contains only
+    // the materialized closure, so rebuild the actual complete catalog before
+    // the accepted input may consume and finish. This also serves the next PID.
+    for (;;) {
+      const generation = { menu: menuGeneration, refresh: refreshGeneration };
+      const sourceVersion = sourceChanges.get(source.id)!;
+      const next = await ownCatalog(async owned => {
+        if (!inputReceiptIsCurrent(receipt, ctx, owned)) throw new SourceError("SOURCE_CANCELLED", source.id);
+        return isDefault
+          ? buildDiscoveryRegistry(await librarySelection.config(selectedContext), cwd, { paths, signal: owned, refreshSourceIds: [source.id],
+            directorySelections: notionDirectorySelections({ sources: [source] }, selectedContext),
+            onCatalogSettled: catalogCompletionNotification(selectedContext, generation) })
+          : discoverSourceCatalog({ sources: [source] }, cwd, { signal: owned, refresh: true });
+      }, signal).finally(() => preparation?.checkpoint());
+      if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceError("SOURCE_CANCELLED", source.id);
+      // A metadata refresh does not cancel an accepted turn or retarget its
+      // Library. Reobserve this Source if its metadata generation moved.
+      if (sourceChanges.get(source.id) !== sourceVersion) continue;
+      const failed = next.failures.find(failure => failure.sourceId === source.id);
+      if (failed) throw new SourceError(failed.code, source.id);
+      const observations = next.lists?.filter(list => list.sourceId === source.id) ?? [];
+      if (observations.length !== 1 || observations[0]!.exhaustive !== true || observations[0]!.stale === true)
+        throw new SourceError("CATALOG_INCOMPLETE", source.id);
+      if (observations[0]!.scope !== result.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+      if (isDefault) {
+        pairedCatalogGenerations.set(next, generation);
+        await publishCatalog(catalogKey(cwd, selectedContext), Promise.resolve(next), new Map([[source.id, sourceVersion]]));
+      }
+      return;
+    }
+  }
+  async function memberRecord(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
+    record: ContentRecord, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
+    if (record.locator.type !== "shared_skill") throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    return materializeCompletionCandidate({ origin: "notion", identity: JSON.stringify([source.id, member.scope, record.kind, record.locator.type, record.id]),
+      token: query, record: { ...record, locator: record.locator },
+      source, scope: member.scope }, ctx.cwd ?? process.cwd(), signal);
+  }
+  async function materializeInputMember(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
+    receipt: InputReceipt, query: string, ctx: ExtensionContext, signal?: AbortSignal, preparation?: SourcePreparationScope): Promise<SkillRecord> {
+    if (member.readiness === "ready" && member.record) return memberRecord(member, source, member.record, query, ctx, signal);
+    const result = await materializeExplicitCandidate({ candidate: member, source, receipt, query, purpose: "use", ctx, signal, preparation,
+      onReceipt: value => materializationReceived(value, source, receipt, ctx, signal, preparation) });
+    return memberRecord(member, source, result.record, query, ctx, signal);
+  }
+  async function discoverInputMembers(receipt: InputReceipt | undefined, text: string, ctx: ExtensionContext,
+    accepted: ReadonlyMap<string, DiscoveryRecord>, registry: readonly DiscoveryRecord[], signal?: AbortSignal, preparation?: SourcePreparationScope): Promise<ReadonlyMap<string, DiscoveryRecord>> {
+    if (!receipt) return accepted;
+    const queries = explicitDollarQueries(receipt.event.text ?? ""), additional = new Map(accepted);
+    for (const request of parseInvocations(text, configuredRules(config))) {
+      if (request.scope !== "global" || !queries.has(request.query) || additional.has(request.query)
+        || matchDiscoveryRecord(request.query, [...registry], true).reason !== "not-found") continue;
+      const selected = await librarySelection.identity(ctx);
+      if (!selected) continue;
+      const qualified = request.query.includes("@") || request.query.includes("/");
+      const sources = qualified ? selected.sources.filter(source => sourceMemberQuery(request.query, source) !== undefined) : [selected.source];
+      if (sources.length !== 1) continue;
+      const source = sources[0]!, lookup = sourceMemberLookupQuery(request.query, source);
+      if (!lookup) continue;
+      if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceError("SOURCE_CANCELLED", source.id);
+      const discoveryPreparation = source.enabled !== false && !source.activation?.offline && !source.discovery?.offline ? preparation : undefined;
+      discoveryPreparation?.begin();
+      const discover = () => discoverNotionSourceMembers(source, ctx.cwd ?? process.cwd(), lookup, signal);
+      const members = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discover) : discover())
+        .finally(() => preparation?.checkpoint());
+      checkPreparationSignal(signal);
+      const member = matchSourceMemberCandidate(request.query, source, members.candidates, members.coverage);
+      if (!member) continue;
+      additional.set(request.query, await materializeInputMember(member, source, receipt, request.query, ctx, signal, preparation));
+    }
+    acceptedRecords.set(receipt, Promise.resolve(additional));
+    return additional;
+  }
+  const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
+  const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
+  const completionListeners = new Set<() => void>();
+  const notifyCompletion = () => { for (const listener of completionListeners) { try { listener(); } catch { /* An editor cannot own directory publication. */ } } };
+  type MenuOwner = { generation: number; ctx: ExtensionContext; cwd: string; prompt: string | string[];
+    snapshot: ReturnType<typeof createCompletionSnapshot>; warnings: Set<string>; ui: ExtensionContext["ui"] };
+  let completionOwner: MenuOwner | undefined;
+  const emptyMenu: DollarMenu = { candidates: [], revision: 0 };
+  const menuIsCurrent = (owner: MenuOwner) => completionOwner === owner && owner.generation === menuGeneration && !catalogOwner.signal.aborted;
+  const menuWarning = (owner: MenuOwner, error: unknown) => {
+    if (!menuIsCurrent(owner)) return;
+    const message = catalogError(error);
+    owner.snapshot.warn(message);
+    if (!owner.warnings.has(message)) {
+      owner.warnings.add(message);
+      try { owner.ui?.notify?.(message, "warning"); } catch { /* A warning cannot own background work. */ }
+    }
+  };
+  const readMenuCache = async (owner: MenuOwner, phase: "cache" | "refresh", source?: Extract<SourceConfig, { type: "notion" }>) => {
+    const ticket = owner.snapshot.begin(phase);
+    try {
+      await ownCatalog(async signal => {
+        await librarySelection.identity(owner.ctx);
+        if (!menuIsCurrent(owner)) return;
+        const selected = source ?? libraryContext(owner.ctx)?.local()?.source;
+        if (!selected || selected.library !== libraryContext(owner.ctx)?.local()?.root) return;
+        const value = await readNotionCandidateSnapshot(selected, owner.cwd, signal);
+        if (!menuIsCurrent(owner)) return;
+        if (value.kind === "miss") return;
+        owner.snapshot.accept(ticket, value.candidates, value.kind === "blocked" ? "Notion catalog access is unavailable" : undefined);
+      });
+    } catch (error) { menuWarning(owner, error); }
+  };
+  const catalogCompletionNotification = (ctx: ExtensionContext, generation: { menu: number; refresh: number }) =>
+    (source: Extract<SourceConfig, { type: "notion" }>) => {
+      const owner = completionOwner;
+      if (!owner || !menuIsCurrent(owner) || generation.menu !== menuGeneration || generation.refresh !== refreshGeneration
+        || libraryContext(ctx) !== libraryContext(owner.ctx)) return;
+      // This fires before host stub/View projections. Cache publication is its own
+      // local operation and never borrows the full metadata consumer's authority.
+      void readMenuCache(owner, "refresh", source);
+    };
+  const localMenus = new Map<string, Promise<DiscoveryRecord[]>>();
+  const refreshMenu = (owner: MenuOwner) => {
+    if (!menuIsCurrent(owner)) return;
+    void currentCatalog(owner.cwd, owner.ctx).then(async result => {
+      if (!menuIsCurrent(owner)) return;
+      const records = await buildDollarRegistryForContext({ getSystemPrompt: () => owner.prompt },
+        Promise.resolve(result.records.filter(record => record.source !== "notion")));
+      if (!menuIsCurrent(owner)) return;
+      owner.snapshot.local(records.map(localCompletionCandidate));
+      await readMenuCache(owner, "refresh");
+      for (const message of formatSourceFailures(result.failures)) menuWarning(owner, new Error(message));
+    }).catch(error => menuWarning(owner, error));
+  };
+  const activateMenu = (ctx: ExtensionContext, online = true) => {
+    completionOwner?.snapshot.retire();
+    menuContext = librarySelection.capture(ctx);
+    const captured = menuContext, cwd = catalogCwd(ctx.cwd ?? process.cwd());
+    const owner: MenuOwner = { generation: menuGeneration, ctx: captured, cwd,
+      prompt: ctx.getSystemPrompt?.() ?? "", snapshot: createCompletionSnapshot(notifyCompletion),
+      warnings: new Set(), ui: ctx.ui };
+    completionOwner = owner;
+    notifyCompletion();
+    const bundled = configuredBundledBuiltinRecords(config);
+    owner.snapshot.local(bundled.map(localCompletionCandidate));
+    let local = localMenus.get(cwd);
+    if (!local) {
+      const localConfig = { ...config, sources: (config.sources ?? []).filter(source => source.type !== "notion") };
+      local = ownCatalog(signal => buildDiscoveryRegistry(localConfig, cwd, { paths, signal }))
+        .then(result => dedupeDiscoveryRecords([...bundled, ...result.records]));
+      localMenus.set(cwd, local);
+      void local.catch(() => { if (localMenus.get(cwd) === local) localMenus.delete(cwd); });
+    }
+    void buildDollarRegistryForContext({ getSystemPrompt: () => owner.prompt }, local).then(records => {
+      if (menuIsCurrent(owner)) owner.snapshot.local(records.map(localCompletionCandidate));
+    }).catch(error => menuWarning(owner, error));
+    void readMenuCache(owner, "cache");
+    // Background discovery retains the existing combined Catalog/Default View
+    // query. No completion request waits for root validation or projections.
+    if (online) refreshMenu(owner);
+  };
+  const retireMenuContext = () => {
+    menuGeneration++; menuContext = undefined;
+    completionOwner?.snapshot.retire(); completionOwner = undefined; notifyCompletion();
+  };
   pi.on("session_shutdown", retireMenuContext);
-  for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => { menuGeneration++; menuContext = ctx; });
+  for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => {
+    menuGeneration++; activateMenu(ctx);
+  });
   pi.on("session_start", (_event, ctx) => {
-    const generation = ++menuGeneration;
-    menuContext = ctx;
+    menuGeneration++;
     const ui = ctx.ui;
     if (ui?.addAutocompleteProvider && !autocompleteUis.has(ui)) {
-      ui.addAutocompleteProvider((current) => createDollarSkillAutocompleteProvider(current, () => menuContext ? dollarMenu(menuContext) : Promise.resolve({ records: [] }), record => { if (menuContext) acceptedSelections.remember(menuContext, record); }));
+      ui.addAutocompleteProvider(current => createDollarSkillAutocompleteProvider(current, {
+        read: () => completionOwner?.snapshot.read() ?? emptyMenu,
+        scope: () => completionOwner,
+        subscribe(listener) { completionListeners.add(listener); return () => { completionListeners.delete(listener); }; },
+      }, candidate => { if (menuContext) acceptedSelections.remember(menuContext, candidate); }));
       autocompleteUis.add(ui);
     }
-    // The editor and provider become usable while the owned catalog request continues.
-    void getCatalog(ctx.cwd).then(async ({ failures }) => {
-      if (generation !== menuGeneration) return;
-      for (const message of formatSourceFailures(failures)) ui?.notify?.(message, "warning");
-      const menu = await dollarMenu(ctx);
-      await menu.followUp;
-    }).catch(error => { if (generation === menuGeneration) ui?.notify?.(catalogError(error), "error"); });
+    activateMenu(ctx);
   });
-  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected"): SkillInjectionPresentation => ({
+  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected", restoredSelection?: SessionSelection): SkillInjectionPresentation => ({
     ...adapter,
+    sourceTaskRole: record => {
+      if (mode !== "restored" || record.source !== "notion" || !record.preparationBinding || !restoredSelection) return undefined;
+      const selected = selectedTaskRole(restoredSelection, record.preparationBinding);
+      if (!selected) return undefined;
+      return selected.required_by ? { role: selected.roles[0], required_by: selected.required_by } : { role: "root" };
+    },
     sourceReference: record => {
       if (paths.host !== "pi" || record.source !== "notion" || !record.preparationBinding) return undefined;
       const directoryRedacted = configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename";
@@ -1626,53 +1907,103 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     sourceFiles: record => mode === "restored" || configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename"
       || !pi.getActiveTools?.().includes("read") ? record.preparationDirectory?.files : host.selectedModelFiles(record, ctx),
   });
+  const finalRequests = createFinalRequestLedger();
   const host = await installHostSkills(pi, {
     config,
-    getRecords: (ctx, signal) => ownCatalog(async owned => {
+    finalRequests,
+    librarySelection,
+    metadataInvalidated: ctx => unseenChanges(catalogKey(ctx.cwd ?? process.cwd(), ctx)).size > 0,
+    contentSearch: (input, sourceId, ctx, operation) => sourceRuntime.foreground(async () => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+      const bound = (await librarySelection.sources(ctx)).find(value => value.id === source.id);
+      if (!bound) throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+      return searchNotionContent(input, bound, ctx.cwd ?? process.cwd(), operation);
+    }),
+    getRecords: (ctx, signal, refreshSourceIds, sourceId) => ownCatalog(async owned => {
       // Pi supplies persisted View selection at session_start. Do not start a
       // context-free discovery that the first session immediately cancels.
       if (paths.host === "pi" && adapter.metadataDiscovery === "deferred" && ctx === undefined) return { records: [], failures: [] };
-      const result = await getCatalog(ctx?.cwd, ctx);
-      // Handoff only to this discovery generation. A cancellation or a later
-      // session cannot retain a second authority for View freshness or permissions.
-      const directories = result.directories;
-      delete result.directories;
-      const pairedGeneration = pairedCatalogGenerations.get(result);
-      pairedCatalogGenerations.delete(result);
-      owned.throwIfAborted();
-      const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
-      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired);
+      ctx = librarySelection.capture(ctx);
+      if (sourceId !== undefined) {
+        const source = (await librarySelection.sources(ctx)).find(source => source.id === sourceId);
+        if (!source) throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+        return discoverSourceCatalog({ sources: [source] }, ctx.cwd, { signal: owned, refreshSourceIds });
+      }
+      if (refreshSourceIds?.length) invalidateCatalogSources(refreshSourceIds, ctx ?? {});
+      for (;;) {
+        const requestedGeneration = refreshGeneration;
+        const result = await currentCatalog(ctx?.cwd, ctx);
+        owned.throwIfAborted();
+        if (requestedGeneration !== refreshGeneration) continue;
+        // Handoff only to this discovery generation. Cancelled consumers cannot
+        // consume a paired View that belongs to the current discovery request.
+        const directories = result.directories;
+        delete result.directories;
+        const pairedGeneration = pairedCatalogGenerations.get(result);
+        pairedCatalogGenerations.delete(result);
+        const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
+        const next = await resolveViewDiscovery(await directoryConfig(ctx), { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired,
+          pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration && pairedGeneration.forceViewRefresh === true);
+        owned.throwIfAborted();
+        if (requestedGeneration === refreshGeneration) return next;
+      }
     }, signal),
-    lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
-    resolveNamedReference: (ref, ctx, signal, refresh) => ownCatalog(owned => resolveNotionReference(ref, notionSources(), ctx.cwd ?? process.cwd(), { signal: owned, refresh }), signal),
-    loadRecord: (record, signal, snapshotId) => snapshotId
-      ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId }))
-      : sourceRuntime.load(record, signal),
-    loadResource: (record, path, ctx, signal) => sourceRuntime.foreground(async () => {
+    lookupReference: (ctx, signal) => ownCatalog(async owned => {
+      const selected = await librarySelection.identity(ctx);
+      return discoverSourceCatalog({ ...config, sources: selected ? [selected.source] : [] }, ctx.cwd, { signal: owned,
+        refreshSourceIds: selected && !selected.source.discovery?.offline ? [selected.source.id] : [] });
+    }, signal),
+    resolveSkillReference: (ref, ctx, signal, refresh, sourceId) => ownCatalog(async owned => {
+      const parsed = parseNotionReference(ref);
+      const exactLibrary = hasExactNativeOwner(parsed) ? nativeReferenceLibrary(parsed) : undefined;
+      const sources = exactLibrary === undefined ? (await librarySelection.identity(ctx))?.sources ?? []
+        : await librarySelection.route(exactLibrary, ctx);
+      const selected = exactLibrary === undefined && sourceId === undefined ? (await librarySelection.identity(ctx))?.source.id : sourceId;
+      return resolveNotionReference(ref, sources.filter(source => selected === undefined || source.id === selected), ctx.cwd ?? process.cwd(), { signal: owned, refresh });
+    }, signal),
+    resolveRelativeReference: (record, from, path, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined);
+      return resolveNotionRelativeReference(record, from, path, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), signal, policy);
     }),
-    readResources: (record, refs, ctx, signal) => sourceRuntime.foreground(async () => {
+    resolveCurrentRoot: (record, ctx, signal) => ownCatalog(owned => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion" || !record.id) throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
+      // Resolve the current main in its original authenticated source, without
+      // carrying a historical path or immutable snapshot into the request.
+      return resolveNotionReferenceInSource(record.id, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), { signal: owned, refresh: true });
+    }, signal),
+    loadRecord: (record, signal, snapshotId, policy) => snapshotId || policy
+      ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId, ...policy }))
+      : sourceRuntime.load(record, signal),
+    loadResource: (record, path, ctx, signal, policy) => sourceRuntime.foreground(async () => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
+      return loadNotionResource(record, path, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), signal, policy);
+    }),
+    readResources: (record, refs, budget, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (paths.host !== "pi" || !source || source.type !== "notion") throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", record.sourceId ?? "notion");
-      return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal);
+      return readNotionResources(record, refs, budget, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), signal, policy);
     }),
-    readFixedResource: (record, ref, ctx, signal) => sourceRuntime.foreground(async () => {
+    readFixedResource: (record, ref, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       if (paths.host !== "pi") return undefined;
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, "sdk");
+      return readFixedNotionResource(record, ref, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), signal, policy);
     }),
-    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
+    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy, authority) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
       for (const record of records) {
-        if (!record.sourceId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
-        groups.set(record.sourceId, [...groups.get(record.sourceId) ?? [], record]);
+        if (!record.sourceId || record.locator?.type !== "shared_skill" || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
+        const key = JSON.stringify([record.sourceId, record.locator.library_id, record.sourceScope]);
+        groups.set(key, [...groups.get(key) ?? [], record]);
       }
       const prepared = [];
-      for (const [sourceId, roots] of groups) {
+      for (const roots of groups.values()) {
         checkPreparationSignal(signal);
+        const sourceId = roots[0]!.sourceId!;
         const source = normalizeSources(config.sources)?.find(source => source.id === sourceId);
         if (!source || source.type !== "notion" || source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
         const messages = ctx ? messagesFromActiveSessionContext(ctx) : [];
@@ -1693,54 +2024,97 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           if (previous && (previous.snapshot_id !== binding.snapshot_id || previous.body_sha256 !== binding.body_sha256)) throw new SourceError("SOURCE_SESSION_CONFLICT", sourceId);
           bindings.set(binding.record.id, binding);
         }
-        prepared.push(await prepareNotionSkills(roots, source, ctx?.cwd ?? process.cwd(), {
-          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace", transport: paths.host === "pi" ? "sdk" : undefined,
-        }));
+        const boundSource = bindNotionSource(source, roots[0]!);
+        const receipt = preparationReceipt(authority), preparation = preparationScope(authority);
+        const refreshed = receipt && roots.some(root => materializedInputs.get(receipt)?.has(JSON.stringify([source.id, root.sourceScope, root.id])));
+        const consume = (current: readonly SkillRecord[], refresh: boolean) => prepareNotionSkills(current, boundSource, ctx?.cwd ?? process.cwd(), {
+          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh, ...policy,
+        }).finally(() => preparation?.checkpoint());
+        try { prepared.push(await consume(roots, mode === "replace" || Boolean(refreshed))); }
+        catch (error) {
+          const authorized = authorizedPreparationRoots(authority, roots, ctx, signal).filter(root => root.id && !rootPins.has(root.id));
+          if (!ctx || !receipt || !authorized.length || mode === "replace" || !needsSourceMaterialization(error)) throw error;
+          const replacements = new Map<string, SkillRecord>();
+          for (const root of authorized) {
+            if (root.locator?.type !== "shared_skill") throw error;
+            const locator = root.locator;
+            const query = preparationQuery(authority, root);
+            if (!query) throw error;
+            const discoveryPreparation = !boundSource.activation?.offline && !boundSource.discovery?.offline ? preparation : undefined;
+            discoveryPreparation?.begin();
+            const discover = () => discoverNotionSourceMembers(boundSource, ctx.cwd ?? process.cwd(), locator.skill_id, signal);
+            const discovered = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discover) : discover())
+              .finally(() => preparation?.checkpoint());
+            checkPreparationSignal(signal);
+            if (discovered.scope !== root.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
+            const candidates = discovered.candidates.filter(member => member.expected_skill_id === locator.skill_id
+              && member.record?.locator.type === "shared_skill" && member.record.locator.page_id === locator.page_id);
+            if (candidates.length > 1) throw new SourceError("SOURCE_REFERENCE_AMBIGUOUS", sourceId);
+            const member = candidates[0];
+            if (member) {
+              if (discovered.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", sourceId);
+              const result = await materializeExplicitCandidate({ candidate: member, source: boundSource, receipt, query, purpose, ctx, signal, preparation,
+                onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal, preparation) });
+              replacements.set(root.id!, { ...root, ...result.record });
+              continue;
+            }
+            if (purpose !== "use") continue;
+            const discoverRequired = () => discoverNotionRequiredSourceMembers(boundSource, ctx.cwd ?? process.cwd(), root, signal);
+            const required = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discoverRequired) : discoverRequired())
+              .finally(() => preparation?.checkpoint());
+            checkPreparationSignal(signal);
+            if (!required.candidates.length) continue;
+            for (const dependency of required.candidates) {
+              if (!dependency.record || dependency.record.locator.type !== "shared_skill") throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
+              const key = JSON.stringify([source.id, required.scope, dependency.record.id]);
+              if (materializedInputs.get(receipt)?.has(key)) continue;
+              await materializeExplicitCandidate({ candidate: dependency, source: boundSource, receipt, query, purpose, ctx, signal, preparation,
+                authorization: required.authorization, onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal, preparation) });
+            }
+            replacements.set(root.id!, { ...root, ...required.root });
+          }
+          if (!replacements.size) throw error;
+          // A receipt retires pre-management facts; it never supplies provider
+          // bytes. The ordinary consumer must prove the entire graph again.
+          prepared.push(await consume(roots.map(root => replacements.get(root.id!) ?? root), true));
+        }
       }
       return prepared;
     }),
     persistGraphs: (graphs, ctx, mode) => persistSessionSelection(pi, ctx, graphs, mode),
     sessionGraph: ctx => exportSessionSelection(ctx, projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx))),
     projectContext: (messages, ctx, pending) => projectSelectedSourceMessages(messages, paths.host === "pi" ? activeSelection(ctx, pending) : sessionSelection(ctx)),
-    restoreActive: paths.host === "pi" ? async (messages, ctx, signal, pending) => {
-      const missing = missingActiveSources(ctx, messages, pending);
-      if (!missing.length) return undefined;
-      const restored: SkillRecord[] = [];
-      const groups = new Map<string, typeof missing>();
-      for (const source of missing) {
-        checkPreparationSignal(signal);
-        if (source.record.source === "notion") {
-          const key = JSON.stringify([source.record.sourceId, source.record.sourceScope]);
-          groups.set(key, [...groups.get(key) ?? [], source]);
-          continue;
+    restoreActive: paths.host === "pi" ? createActiveSourceRestorer({
+      assertAvailable: record => host.assertCanRestore(record),
+      load: (members, missing, ctx, signal) => host.withFixedRestoration(members.map(source => source.record), signal, async current => {
+        const restored: SkillRecord[] = [], groups = new Map<string, typeof missing>();
+        for (const source of missing) {
+          checkPreparationSignal(current);
+          if (source.record.source === "notion") {
+            const key = JSON.stringify([source.record.sourceId, source.record.sourceScope]);
+            groups.set(key, [...groups.get(key) ?? [], source]);
+          } else restored.push({ ...source.record, body: readFileSync(source.record.path, "utf8") });
         }
-        const record = { ...source.record, body: readFileSync(source.record.path, "utf8") };
-        checkPreparationSignal(signal);
-        restored.push(assertRestoredSource(source, record));
-      }
-      const active = activeSources(ctx);
-      for (const group of groups.values()) {
-        const first = group[0]!, sourceId = first.record.sourceId!;
-        const source = normalizeSources(config.sources)?.find(value => value.id === sourceId && value.type === "notion" && value.enabled !== false);
-        if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
-        const fixed = [...active.sources.values()].filter(value => value.record.sourceId === sourceId && value.record.sourceScope === first.record.sourceScope);
-        // A restore observes exactly the confirmed vector. Inspect keeps every
-        // fixed node as a root; it cannot traverse a newly changed Required edge.
-        // Its graph is deliberately never installed as the active use graph.
-        const compiled = await sourceRuntime.foreground(() => prepareNotionSkills(fixed.map(value => value.record), source, ctx.cwd ?? process.cwd(), {
-          purpose: "inspect", signal, transport: "sdk",
-          rootPins: new Map(fixed.map(value => [value.record.id!, value.snapshotId])),
-          sessionBindings: fixed.map(value => value.record.preparationBinding!),
-        }));
-        checkPreparationSignal(signal);
-        for (const expected of group) {
-          const record = compiled.records.find(value => sourceContentIdentity(value) === expected.contentIdentity);
-          if (!record) throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
-          restored.push(assertRestoredSource(expected, record));
+        for (const group of groups.values()) {
+          const first = group[0]!, sourceId = first.record.sourceId!;
+          const source = normalizeSources(config.sources)?.find(value => value.id === sourceId && value.type === "notion" && value.enabled !== false);
+          if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+          const fixed = members.filter(value => value.record.sourceId === sourceId && value.record.sourceScope === first.record.sourceScope);
+          // Inspect only the missing fixed nodes, with the original complete
+          // vector. Never traverse newly changed Required edges or activate this graph.
+          const compiled = await sourceRuntime.foreground(() => prepareNotionSkills(group.map(value => value.record), bindNotionSource(source, first.record), ctx.cwd ?? process.cwd(), {
+            purpose: "inspect", signal: current,
+            rootPins: new Map(fixed.map(value => [value.record.id!, value.snapshotId])),
+            sessionBindings: fixed.map(value => value.record.preparationBinding!),
+          }));
+          checkPreparationSignal(current);
+          restored.push(...compiled.records);
         }
-      }
-      return buildInjectedPayloadFromInjections(restored.map(record => ({ record, query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored"));
-    } : undefined,
+        return restored;
+      }),
+      render: (records, ctx, selection) => records.length ? buildInjectedPayloadFromInjections(records.map(record => ({ record,
+        query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored", selection)) : undefined,
+    }) : undefined,
     confirmDelivery: paths.host === "pi" ? (records, messages, ctx) => confirmActiveSources(pi, ctx, records, messages) : undefined,
     isLoaded: (record, ctx) => hasLoadedRecord(projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx)), record),
     sessionSnapshot: (record, ctx) => {
@@ -1755,14 +2129,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     },
     onMetadata: records => sourceRuntime.prefetch(selectPrefetchPlans(records, normalizeSources(config.sources))),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
-    onPreparation: entry => {
-      sourceRuntime.pausePrefetch("foreground");
-      acceptedSelections.capture(entry.ctx, entry.controller.signal,
-        parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
+    onInputReceipt: receipt => {
+      acceptedSelections.capture(receipt,
+        parseInvocations(receipt.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
     },
-    buildPreparedPrompt: async (text, ctx, signal, prepared) => {
+    onPreparation: () => {
+      sourceRuntime.pausePrefetch("foreground");
+    },
+    buildPreparedPrompt: async (text, ctx, signal, prepared, receipt) => {
+      const accepted = await submissionRecords(receipt, signal);
       const result = await invokeBeforeAgentStart(
-        { prompt: text }, ctx, registryPromise, config, getDollarRegistry(ctx.cwd),
+        { prompt: text }, ctx, registryPromise, config, submissionRegistry(ctx, text, accepted, signal),
         async record => {
           if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
           const value = await host.prepare(record, ctx, signal);
@@ -1770,13 +2147,15 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           return value.record;
         },
         (messages, record) => hasLoadedRecord(projectSelectedSourceMessages(messages, sessionSelection(ctx)), record),
-        injectionPresentation(ctx), acceptedSelections.forSubmission(signal), prepared,
+        injectionPresentation(ctx), accepted, prepared,
       );
       return result?.message;
     },
     taskPrompt: async (text, ctx, signal, invocation) => {
       const requests = parseInvocations(text, configuredRules(config));
-      const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)), config, acceptedSelections.forSubmission(signal));
+      if (!requests.length) return text;
+      const accepted = await submissionRecords(invocation?.receipt, signal);
+      const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)), config, accepted, libraryContext(ctx)?.local()?.source.id);
       const tasks: string[] = [];
       for (const injection of injections) {
         if (recordKind(injection.record) !== "prompt") continue;
@@ -1791,46 +2170,89 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       }
       return tasks.length ? text + "\n\n" + tasks.join("\n\n") : text;
     },
-    preflightPrompt: async (text, ctx, signal) => {
+    preflightPrompt: async (text, ctx, signal, receipt, budget) => {
       const requests = parseInvocations(text, configuredRules(config));
       if (requests.length === 0) return;
-      const registry = await registryPromise;
-      const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
-        ? await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)) : [];
-      const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, acceptedSelections.forSubmission(signal));
-      await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
+      const prepare = async (preparation?: SourcePreparationScope) => {
+        let accepted = await submissionRecords(receipt, signal, preparation);
+        const registry = await registryPromise;
+        const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
+          ? await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)) : [];
+        accepted = await discoverInputMembers(receipt, text, ctx, accepted, dollarRegistry, signal, preparation);
+        const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, accepted, libraryContext(ctx)?.local()?.source.id);
+        const authority = authorizeExplicitPreparation(receipt, injections, preparation);
+        try { await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal, authority); }
+        finally { revokePreparationAuthority(authority); }
+      };
+      // The first guarded repair starts the episode; catalog/name reads before
+      // it remain ordinary reads. Closure proof completes before this owner ends.
+      await (budget ? budget.withSourcePreparation(prepare) : prepare());
     },
   }, adapter);
+  const writeSources = (ctx: ExtensionContext) => libraryContext(host.turnContext(ctx))?.local()?.sources ?? config.sources ?? [];
+  installCliWriteInvalidation(pi, {
+    // Freeze the whole accepted Source map: an explicit --library B from an A
+    // turn still targets enabled B. A later default change cannot retarget it.
+    sources: writeSources,
+    records(ctx) {
+      const sources = writeSources(ctx);
+      return [...dollarRegistryByCwd.values()].flatMap(entry => entry.status === "ready" ? entry.result.records.filter((record): record is SkillRecord => {
+        const source = sources.find(source => source.id === record.sourceId);
+        return source?.type === "notion" && record.locator?.type === "shared_skill" && source.library === record.locator.library_id;
+      }) : []);
+    },
+    changed(sourceIds, ctx) {
+      invalidateCatalogSources(sourceIds, ctx);
+      sourceRuntime.forgetSources(sourceIds);
+      if (completionOwner) refreshMenu(completionOwner);
+    },
+  });
+  installSkillGuidance(pi, config, paths, ctx => {
+    const captured = librarySelection.capture(host.turnContext(ctx));
+    const selected = libraryContext(captured)?.local();
+    return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...selected?.sources ?? []] };
+  });
   // Host metadata generations must retire before cancelled source promises
   // settle, so no late failure can notify or publish into the closed session.
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", () => {
     refreshGeneration++;
     catalogOwner.abort();
     dollarRegistryByCwd.clear();
     notionRefresh.clear();
     notionRetryAt.clear();
-    await Promise.allSettled([...pendingCatalogs]);
+    // Cancellation and publication fences already retire every catalog owner.
+    // A producer that ignores AbortSignal must not hold the user's shutdown.
   });
   const refresh = async (ctx: ExtensionContext) => {
     const selectedGeneration = ++refreshGeneration;
+    const ownerMenu = ++menuGeneration;
     host.invalidate();
     sourceRuntime.invalidate();
     registryPromise = buildRegistry(config, paths);
-    const result = await ownCatalog(signal => buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths, signal }));
+    localMenus.clear();
+    librarySelection.invalidate();
+    ctx = librarySelection.capture(ctx);
+    activateMenu(ctx, false);
+    const result = await ownCatalog(async signal => buildDiscoveryRegistry(await librarySelection.config(ctx), ctx.cwd, { refresh: true, paths, signal,
+      directorySelections: notionDirectorySelections(await directoryConfig(ctx), ctx),
+      onCatalogSettled: catalogCompletionNotification(ctx, { menu: menuGeneration, refresh: selectedGeneration }) }));
     if (selectedGeneration !== refreshGeneration) return;
+    pairedCatalogGenerations.set(result, { menu: ownerMenu, refresh: selectedGeneration, forceViewRefresh: true });
     dollarRegistryByCwd.clear();
-    notionRetryAt.delete(catalogCwd(ctx.cwd ?? process.cwd()));
-    publishCatalog(catalogCwd(ctx.cwd ?? process.cwd()), Promise.resolve(result), new Map(sourceChanges));
+    notionRetryAt.delete(catalogKey(ctx.cwd ?? process.cwd(), ctx));
+    publishCatalog(catalogKey(ctx.cwd ?? process.cwd(), ctx), Promise.resolve(result), new Map(sourceChanges));
     await host.refresh(ctx);
   };
   pi.on("before_agent_start", async (event, ctx) => {
     if (paths.host === "pi" && adapter.metadataDiscovery === "deferred") return undefined;
+    ctx = host.turnContext(ctx);
     try {
-      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared) => {
+      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared, receipt) => {
         if (original === undefined) return undefined;
         const submission = { ...event, prompt: original ?? event.prompt };
+        const accepted = await submissionRecords(receipt, signal);
         return invokeBeforeAgentStart(
-          submission, ctx, registryPromise, config, getDollarRegistry(ctx.cwd),
+          submission, ctx, registryPromise, config, submissionRegistry(ctx, submission.prompt, accepted, signal),
           async record => {
             if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
             const prepared = await host.prepare(record, ctx, signal);
@@ -1841,7 +2263,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             (native !== undefined && recordIdentity(native) === recordIdentity(record)) || host.isNativeLoaded(messages, record as SkillRecord)
           )),
           adapter,
-          acceptedSelections.forSubmission(signal),
+          accepted,
           prepared,
         );
       });
@@ -1852,21 +2274,34 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       return undefined;
     }
   });
-  const viewCommand = createViewCommands(pi, config, ctx => host.refresh(ctx), () => host.viewStatus());
+  const refreshSelection = async (ctx: ExtensionContext) => {
+    menuGeneration++;
+    invalidateCatalogSources(notionSources().map(source => source.id), ctx);
+    activateMenu(ctx);
+    await host.refresh(ctx, { preserveTurn: true });
+  };
+  const libraryCommand = createLibraryCommand(pi, librarySelection, refreshSelection);
+  const viewCommand = createViewCommands(pi, config, refreshSelection, () => host.viewStatus(), librarySelection);
   const command = {
     description: "Inspect context-broker discovery records, routers, catalogs, and config health",
     getArgumentCompletions: contextBrokerCommandCompletions,
     handler: async (args: string, ctx: ExtensionContext) => {
+      if (await handleSourceConnection(args, ctx)) return;
+      if (await libraryCommand(args, ctx)) return;
       if (await viewCommand(args, ctx)) return;
       if (args.trim() === "sources") {
         ctx.ui?.notify?.(`context-broker sources: ${JSON.stringify({ prefetch: sourceRuntime.diagnostics() })}`, "info");
+        return;
+      }
+      if (args.trim() === "request") {
+        ctx.ui?.notify?.(formatFinalRequestDiagnostic(finalRequests), "info");
         return;
       }
       return dispatchContextBrokerCommand(args, ctx, config, getDollarRegistry, registryPromise, refresh, paths);
     },
   };
   pi.registerCommand?.("context-broker", command);
-
+  if (pi.pi === undefined) await preparePiDollarAutocompleteEditor(pi);
 }
 
 export {

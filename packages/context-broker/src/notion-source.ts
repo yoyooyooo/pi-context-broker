@@ -4,38 +4,43 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { normalizeKey } from "./skill-records";
-import { parseNativeReference, type NativeFileBinding } from "./native-reference";
+import { parseNativeReference, parseNotionReference, notionPageId, nativeFileRef, nativeFileBinding, withNativeSnapshot, hasExactNativeOwner, nativeReferenceLibrary, bindNativeReference, type NativeFileBinding } from "./native-reference";
+import { currentEvidence } from "./consumer-observation";
+import { consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionPolicy } from "./consumption-effects";
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
-import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
+import { sharedSkillId, validSharedRecordId } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, supportsNotionSdkReadOutputProof, supportsNotionSdkCatalogDirectory, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
-import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity, type ResourceReadWireFile } from "./resource-read-types";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, readNotionCandidateSnapshotSdk, discoverNotionSourceMembersSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { decodeSourceMemberCandidate, materializationAuthorization, type SourceMemberCandidate, type SourceMaterializationAuthorization } from "./source-materialization-contract";
+import { notionCompletionCandidates, sourceMemberCompletionCandidates, type CompletionCandidate } from "./completion-candidates";
+import type { ResourceReadBudget, FixedResourceRead, ResourceReadBatch, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
+import { searchNotionContentSdk } from "./notion-sdk";
+import { decodeContentSearchResult, type ContentSearchRequest, type ContentSearchOptions, type ContentSearchResult } from "./content-search";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
+type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string;
+  onCatalogSettled?: (source: NotionSource) => void };
 type Json = Record<string, unknown>;
-const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
-const SubscriptionLocator = Schema.Struct({ type: Schema.Literal("notion_subscription"), subscription_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, target_database_id: Schema.String });
 const SharedLocator = Schema.Struct({ type: Schema.Literal("shared_skill"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, library_id: Schema.String, skill_id: Schema.String });
-const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: Schema.Union([PageLocator, SubscriptionLocator, SharedLocator]), name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.optional(Schema.Boolean), entrypoint: Schema.String, ref: Schema.String, upstream: Schema.optional(Schema.Struct({ repo: Schema.String })) });
+const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: SharedLocator, name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.Boolean, entrypoint: Schema.String, ref: Schema.String });
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const SNAPSHOT = /^s_[0-9a-f]{64}$/;
-const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NOTION_UNAVAILABLE NOTION_REQUEST_FAILED NOTION_QUEUE_FULL NOTION_SCHEDULER_UNAVAILABLE RATE_LIMITED CONFIG_ERROR SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND CONTENT_DISABLED SHARED_PROFILE_INVALID SHARED_PROFILE_SCOPE SHARED_PROFILE_NOT_FOUND SHARED_PROFILE_BASELINE_MISSING SHARED_PROFILE_CONFLICT SHARED_PROFILE_PENDING SHARED_PROFILE_PENDING_CONFLICT SHARED_PROFILE_UNRESOLVED SHARED_PROFILE_STALE SHARED_PROFILE_DISABLED".split(" ").map((code) => [code, true as const]));
+const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("LIBRARY_CONTEXT_REQUIRED LIBRARY_NOT_FOUND LIBRARY_AMBIGUOUS LIBRARY_SCHEMA_CONFLICT LIBRARY_INIT_INCOMPLETE LIBRARY_BINDING_CHANGED LIBRARY_SCOPE_MISMATCH SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NOTION_UNAVAILABLE NOTION_REQUEST_FAILED NOTION_QUEUE_FULL NOTION_SCHEDULER_UNAVAILABLE RATE_LIMITED CONFIG_ERROR SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND CONTENT_DISABLED SHARED_PROFILE_INVALID SHARED_PROFILE_SCOPE SHARED_PROFILE_NOT_FOUND SHARED_PROFILE_BASELINE_MISSING SHARED_PROFILE_CONFLICT SHARED_PROFILE_PENDING SHARED_PROFILE_PENDING_CONFLICT SHARED_PROFILE_UNRESOLVED SHARED_PROFILE_STALE SHARED_PROFILE_DISABLED".split(" ").map((code) => [code, true as const]));
 
 export class SourceError extends Error {
   readonly code: string;
   readonly sourceId: string;
   readonly exitCode?: number;
   readonly details?: ReturnType<typeof preparationFailureDetails>;
-  constructor(code: string, sourceId: string, exitCode?: number, details?: ReturnType<typeof preparationFailureDetails>) {
-    super(`context-broker source operation failed (${code})`);
+  constructor(code: string, sourceId: string, exitCode?: number, details?: ReturnType<typeof preparationFailureDetails>, options?: ErrorOptions) {
+    super(`context-broker source operation failed (${code})`, options);
     this.name = "SourceError";
     this.code = code;
     this.sourceId = sourceId;
@@ -73,20 +78,17 @@ function validAlias(alias: string): boolean {
   try { return !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(decodeURIComponent(alias)); }
   catch { return false; }
 }
-function contentRecord(value: unknown, source: NotionSource): ContentRecord {
-  let item: ContentRecord;
+function contentRecord(value: unknown, source: NotionSource): typeof ContentSchema.Type {
+  let item: typeof ContentSchema.Type;
   try { item = Schema.decodeUnknownSync(ContentSchema)(value, { onExcessProperty: "error" }); }
   catch { return decodeError(source); }
   const locator = item.locator;
-  if (locator.type === "local") return decodeError(source);
-  const page = locator.type === "notion_subscription" ? locator.subscription_id : locator.page_id;
+  const page = locator.page_id;
   const canonical = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const entrypoint = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[item.kind];
-  const identity = locator.type === "shared_skill" ? sharedSkillId(locator.library_id, locator.skill_id) : locator.type + ":" + page;
-  if (identity === undefined || locator.type === "shared_skill" && typeof item.enabled !== "boolean") decodeError(source);
-  const selector = locator.type === "shared_skill" ? identity : locator.type === "notion_page" ? page : "upstream:" + page;
-  if (!canonical.test(page) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || (locator.type === "notion_subscription" && (!canonical.test(locator.target_database_id) || item.kind !== "router")) || item.id !== identity || item.entrypoint !== entrypoint || item.ref !== "skill://" + encodeURIComponent(selector) + "/" + entrypoint || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
-  if (item.upstream && (item.kind !== "skill" || locator.type !== "notion_page" || !/\S/u.test(item.upstream.repo) || /[/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(item.upstream.repo))) decodeError(source);
+  const identity = sharedSkillId(locator.library_id, locator.skill_id);
+  if (identity === undefined) decodeError(source);
+  if (!canonical.test(page) || !canonical.test(locator.library_id) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || item.id !== identity || item.entrypoint !== entrypoint || item.ref !== nativeFileRef(identity, entrypoint) || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
   return item;
 }
 function freshness(value: unknown, source: NotionSource): Json {
@@ -113,12 +115,76 @@ async function sdkFreshness(source: NotionSource, refresh?: boolean) {
   return { policy: "max_age", max_age_ms };
 }
 function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
-  return { sourceId: source.id, database: source.database, cwd, signal, env: { ...process.env,
+  return { sourceId: source.id, library: source.library, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
 }
+export type NotionCandidateSnapshot = { kind: "miss"; reason: string }
+  | { kind: "blocked"; scope: string; candidates: CompletionCandidate[] }
+  | { kind: "snapshot"; scope: string; candidates: CompletionCandidate[]; verifiedAt: number; stale: boolean; coverage: "complete" | "partial" };
+
+export async function readNotionCandidateSnapshot(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<NotionCandidateSnapshot> {
+  const value = await readNotionCandidateSnapshotSdk(sdkOptions(source, cwd, signal));
+  signal?.throwIfAborted();
+  if (!object(value)) return decodeError(source);
+  if (value.kind === "miss" && typeof value.reason === "string") return { kind: "miss", reason: value.reason };
+  if (typeof value.libraryId !== "string" || notionPageId(value.libraryId) !== value.libraryId
+    || source.library !== undefined && notionPageId(source.library) !== value.libraryId
+    || typeof value.scope !== "string" || !HASH.test(value.scope) || !Array.isArray(value.denials)) return decodeError(source);
+  if (value.kind === "blocked") return { kind: "blocked", scope: value.scope, candidates: [] };
+  if (value.kind !== "snapshot" || !Array.isArray(value.records) || !["complete", "partial"].includes(String(value.coverage))
+    || typeof value.verifiedAt !== "number" || !Number.isSafeInteger(value.verifiedAt) || value.verifiedAt < 0
+    || value.fetched_at !== value.verifiedAt || typeof value.stale !== "boolean") return decodeError(source);
+  const libraryId = value.libraryId, candidateScope = value.scope;
+  const records = value.records.map(record => contentRecord(record, source));
+  if (value.source_members !== undefined && !Array.isArray(value.source_members)) return decodeError(source);
+  const members = Array.isArray(value.source_members) ? value.source_members.map(member => decodeSourceMemberCandidate(member,
+    { library: libraryId, scope: candidateScope }, record => contentRecord(record, source))) : [];
+  const stable = new Set<string>(), physical = new Set<string>();
+  for (const record of records) {
+    if (record.locator.library_id !== value.libraryId || stable.has(record.id) || physical.has(record.locator.page_id)) return decodeError(source);
+    stable.add(record.id); physical.add(record.locator.page_id);
+  }
+  const unready = new Set(members.flatMap(member => member.readiness !== "ready" && member.record ? [member.record.id] : []));
+  return { kind: "snapshot", scope: value.scope, verifiedAt: value.verifiedAt, stale: value.stale,
+    coverage: value.coverage === "complete" ? "complete" : "partial",
+    candidates: [...notionCompletionCandidates(records.filter(record => !unready.has(record.id)), source, value.scope, value.coverage === "complete"),
+      ...sourceMemberCompletionCandidates(members.filter(member => member.readiness !== "ready" || !member.record || !stable.has(member.record.id)), source)] };
+}
+
+/** Only an accepted input needs a host file projection. This grants no current/body proof. */
+export async function materializeCompletionCandidate(candidate: CompletionCandidate, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
+  signal?.throwIfAborted();
+  if (candidate.origin === "local") return candidate.record;
+  if (candidate.origin === "source_member") throw new SourceError("SOURCE_MATERIALIZATION_REQUIRED", candidate.source.id);
+  const { record: item, source, scope, token } = candidate;
+  const dir = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", randomUUID(), createHash("sha256").update(item.id).digest("hex"));
+  await privateDirectory(dir, source);
+  const path = join(dir, item.entrypoint);
+  await writeFile(path, `---\nname: ${JSON.stringify(item.alias.replace(/[^a-z0-9-]/g, "-"))}\ndescription: ${JSON.stringify(item.description)}\n---\n`, { flag: "wx", mode: 0o600 });
+  signal?.throwIfAborted();
+  return { ...item, source: "notion", path, metadataIndexPath: path, aliases: [], autoloadEnabled: item.kind !== "prompt",
+    normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description),
+    sourceId: source.id, sourceScope: scope, token: `${source.namespace ?? source.id}/${item.alias}`, selectionToken: token };
+}
+/** One configured source enters the SDK; raw MCP candidates never enter Broker. */
+export async function searchNotionContent(input: ContentSearchRequest, source: NotionSource, cwd: string,
+  options: ContentSearchOptions): Promise<ContentSearchResult> {
+  if (source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  if (source.discovery?.offline) throw new SourceError("CONTENT_SEARCH_OFFLINE", source.id);
+  const value = await searchNotionContentSdk(input, { ...sdkOptions(source, cwd, options.signal),
+    deadline: options.deadline, onAuthorize: options.onAuthorize });
+  const result = decodeContentSearchResult(value);
+  if (result.records.length > input.limit) throw new SourceError("CONTENT_SEARCH_RESPONSE_INVALID", source.id);
+  if (source.library !== undefined) {
+    const library = notionPageId(source.library);
+    if (!library || result.records.some(record => record.locator.library_id !== library))
+      throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  }
+  return result;
+}
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
-  if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id);
-  if (error instanceof NotionSdkError) return new SourceError(error.code, source.id);
+  if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects: errorConsumptionEffects(error) });
+  if (error instanceof NotionSdkError) return new SourceError(error.code, source.id, undefined, { effects: noConsumptionWrites() });
   if (!object(error)) return new SourceError("SOURCE_SDK_FAILED", source.id);
   const details = object(error.details) ? error.details : undefined;
   const preparation = object(details?.preparation) ? details.preparation : undefined;
@@ -126,17 +192,17 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
     && Array.isArray(preparation.nodes) && preparation.nodes.length === 1 && preparation.nodes.every(node => object(node) && node.state === "failed"
       && Array.isArray(node.roles) && node.roles.length === 1 && node.roles[0] === "root");
   const missingPage = typeof details?.path === "string" ? /^v1\/pages\/([0-9a-f-]+)$/i.exec(details.path)?.[1] : undefined;
-  const selectedPage = selected?.locator?.type === "shared_skill" || selected?.locator?.type === "notion_page" ? selected.locator.page_id : undefined;
+  const selectedPage = selected?.locator?.type === "shared_skill" ? selected.locator.page_id : undefined;
   if ((operation === "read" || rootOnlyFailure) && error.code === "NOT_FOUND" && details?.notion_code === "object_not_found"
     && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
-  const code = typeof error.code === "string" && (CLI_CODES[error.code] === true
-    || /^RESOURCE_[A-Z_]+$/.test(error.code) || error.code === "SNAPSHOT_NOT_MATERIALIZED"
-    || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(error.code)) ? error.code : "SOURCE_SDK_FAILED";
-  return new SourceError(code, source.id, undefined, operation === "prepare" ? preparationFailureDetails(details) : undefined);
+  const receivedCode = error.code === "SKILL_DISABLED" ? "CONTENT_DISABLED" : error.code;
+  const code = typeof receivedCode === "string" && (CLI_CODES[receivedCode] === true
+    || /^(?:CURRENT|RESOURCE)_[A-Z_]+$/.test(receivedCode) || receivedCode === "SNAPSHOT_NOT_MATERIALIZED"
+    || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(receivedCode)) ? receivedCode : "SOURCE_SDK_FAILED";
+  return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) }, { cause: error });
 }
 
 function sourceCommand(source: NotionSource): string[] {
-  if (source.command) return typeof source.command === "string" ? [source.command] : source.command;
   const bundled = fileURLToPath(new URL("./ntn-skills.mjs", import.meta.url));
   try {
     const entry = existsSync(bundled) ? bundled : fileURLToPath(new URL("../dist/ntn-skills.mjs", import.meta.url));
@@ -145,23 +211,85 @@ function sourceCommand(source: NotionSource): string[] {
   } catch { throw new SourceError("SOURCE_COMMAND_UNAVAILABLE", source.id); }
 }
 
-export function sourceFailureMessage(code: string): string {
+export function sourceFailureDiagnostic(code: string, details?: SourceError["details"]): {
+  code: "SHARED_ROUTER_MEMBER_UNAVAILABLE"; field: "Requires" | "Members"; reason?: "disabled"; page_id?: string;
+} | undefined {
+  if (code !== "SHARED_ROUTER_MEMBER_UNAVAILABLE" || !details?.field) return undefined;
+  return { code, field: details.field, ...(details.reason === "disabled" ? { reason: "disabled" } : {}),
+    ...(details.page_id ? { page_id: details.page_id } : {}) };
+}
+
+export function sourceFailureMessage(code: string, details?: SourceError["details"]): string {
   switch (code) {
-    case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the source CLI. Reinstall pi-context-broker or check the configured command and Node.js 22.22.3+ within 22.x or 24.20.0+.";
+    case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the bundled management CLI. Reinstall the complete paired pi-context-broker package and check Node.js ^24.22.3 or ^26.13.1.";
+    case "SOURCE_COMMAND_UNSUPPORTED": return "Notion source.command is no longer supported. Remove that override and upgrade the complete paired CLI/SDK and pi-context-broker package; keep the source Library root and access configuration.";
+    case "SOURCE_LIBRARY_REQUIRED": return "Notion source.database is retired. Replace it with source.library set to the verified Library root page ID or URL, then reload the paired Broker and SDK.";
+    case "SOURCE_CACHE_VERSION_UNSUPPORTED":
+    case "SNAPSHOT_MISSING":
+    case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
+    case "CACHE_REFRESH_REQUIRED": return "The local selection uses an older cache contract. Refresh the source online and select its current content again.";
+    case "CACHE_INVALIDATED": return "Current facts or cache state changed during this acquisition. Select current content again; existing fixed selections remain unchanged.";
+    case "STATE_BUSY": return "The local state store is busy. Let the current operation finish and retry; unrelated conversation can continue.";
+    case "STATE_RUNTIME_UNSUPPORTED": return "The current process cannot open the SDK state store. Restart Pi with a runtime supported by the bundled ntn-skills SDK.";
+    case "UPSTREAM_GIT_RUNTIME_UNSUPPORTED": return "The Git used by this process lacks --no-lazy-fetch. Select a Git with that capability before retrying upstream file acquisition; Git 2.50.1 is verified.";
+    case "SOURCE_RECOVERY_TIME_BUDGET": return "Restoring the selected Skills reached this request's total read budget. Continue independent work; retry later or explicitly select current content.";
+    case "STATE_CORRUPT":
+    case "STORAGE_ERROR": return "The local state store could not be read safely. Preserve it for diagnosis and run /context-broker doctor; unrelated conversation can continue.";
+    case "STATE_CUTOVER_REQUIRED": return "The local state or configuration uses a retired contract. Choose a fresh NTN_SKILLS_HOME and, if the configuration contains retired bindings, NTN_SKILLS_CONFIG_HOME. Keep the old roots and objects intact for read-only extraction.";
+    case "LIBRARY_CONTEXT_REQUIRED": return "Set the CLI global default_library or select /context-broker library ROOT_ID. A complete Skill URI or actual selected containing file can supply an explicit Library for a read.";
+    case "LIBRARY_SOURCE_UNAVAILABLE": return "The selected Library has no enabled Broker Source. Configure source.library for that root and reload, or select another configured Library.";
+    case "LIBRARY_SOURCE_AMBIGUOUS": return "More than one enabled Broker Source resolves to the same Library root. Keep one Source per root and reload.";
+    case "LIBRARY_SELECTION_INVALID": return "The active session branch contains an invalid Library selection. Select a valid Library root explicitly.";
+    case "LIBRARY_NOT_FOUND": return "The selected root has no initialized Library. Check the root ID and connection access, or initialize that root through the authorized CLI workflow.";
+    case "LIBRARY_AMBIGUOUS":
+    case "LIBRARY_SCHEMA_CONFLICT": return "The Library root has conflicting table bindings or schema. Inspect it with the management CLI and repair the binding before consuming it.";
+    case "LIBRARY_INIT_INCOMPLETE": return "Library initialization is incomplete. Resume the existing initialization operation; consumption does not repair or recreate tables.";
+    case "LIBRARY_BINDING_CHANGED": return "The verified Library table binding changed. Inspect the root and select it again after confirming the intended binding.";
+    case "LIBRARY_SCOPE_MISMATCH": return "The explicit Library does not match this source's verified Library root. Select the source that owns this Library.";
+    case "SOURCE_MATERIALIZATION_REQUIRED": return "This registered member needs an explicit $ selection before it can be prepared for consumption.";
+    case "SOURCE_MATERIALIZATION_UNAUTHORIZED": return "Source materialization requires a current explicit user selection.";
+    case "SOURCE_MATERIALIZATION_PENDING": return "The Source management operation is still pending. Its original request must settle before this Skill can be consumed.";
+    case "SOURCE_MATERIALIZATION_BLOCKED": return "The registered Source cannot prepare this exact member under its current policy or state.";
+    case "SOURCE_MATERIALIZATION_FAILED": return "Source materialization did not finish. Its management result remains separate from the readonly consumption result.";
+    case "SOURCE_MANAGER_REQUIRED": return "Configure a fixed Source manager for this Library before preparing its registered members.";
+    case "SOURCE_MANAGER_CONFIG_INVALID": return "The configured Source manager binding is invalid. Repair that binding before retrying the selection.";
+    case "SOURCE_MANAGER_SCOPE_MISMATCH": return "The Source manager does not own this exact Library and credential scope. Select its matching configured source.";
+    case "SOURCE_MANAGER_RESPONSE_INVALID": return "The Source manager response did not prove this request and target. No returned metadata was admitted for consumption.";
+    case "SOURCE_MANAGER_UNAVAILABLE": return "The configured Source manager could not finish this request. Its remote write status remains unknown.";
+    case "SOURCE_MANAGEMENT_UNAVAILABLE": return "The paired Source manager is unavailable or incompatible. Select a complete matching CLI and Broker installation.";
+    case "CURRENT_SCHEMA_REQUIRED": return "This entry lacks the current content schema. An authorized management migration must finish before it can be consumed; reading or refreshing does not perform that migration.";
+    case "SHARED_ROUTER_MEMBER_UNAVAILABLE": {
+      const relation = sourceFailureDiagnostic(code, details), field = relation?.field ?? "relation";
+      return relation?.reason === "disabled"
+        ? `The selected ${field} target is disabled (Enabled=false) in Notion. This acquisition did not complete; existing fixed selections are unchanged. Enable that target before explicitly requesting latest content again.`
+        : `A selected ${field} target is missing, inaccessible or outside the configured library. Verify that target and its relation before retrying; existing fixed selections are unchanged.`;
+    }
+    case "SHARED_ACQUISITION_SCOPE": return "The selected content no longer matches this source and library. Refresh this source and select its current content again.";
+    case "SHARED_SOURCE_MISSING":
+    case "SHARED_SOURCE_CONFLICT": return "The selected source is unavailable or has changed. Refresh the source and select its current content again.";
+    case "SOURCE_MATERIALIZATION_INCOMPLETE":
+    case "SHARED_RESOURCE_CONTENT_INVALID": return "The selected resource failed its complete file check. Inspect the source content, then refresh and select it again.";
     case "SOURCE_SDK_UNAVAILABLE":
     case "SOURCE_SDK_INCOMPATIBLE": return "The bundled ntn-skills SDK is missing or incompatible. Reinstall the complete pi-context-broker package.";
+    case "STATE_UNAVAILABLE": return "The local ntn-skills Store is unavailable. Restore access to the existing state directory before retrying this read.";
     case "NOTION_UNAVAILABLE": return "The direct Notion API request could not complete. Check the connection and run /context-broker doctor.";
     case "SOURCE_PROTOCOL_UNSUPPORTED": return "Update the source CLI to a build with the direct Notion API doctor contract.";
-    case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Notion database.";
+    case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Library root and its child tables.";
     case "NOTION_QUEUE_FULL": return "The shared Notion request queue is full. Let the current work finish, then retry this read.";
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
-    case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
+    case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected Library root and its child tables.";
+    case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
+    case "CURRENT_SOURCE_REQUIRED": return "This operation requires a current Source contribution. Migrate its current content if the Source table or binding is missing or historical. For a cross-Skill relative link, use an exact target Skill reference.";
+    case "CURRENT_SOURCE_CHANGED": return "The Source revision no longer matches the containing fixed file. Existing selections are unchanged; use a previously issued exact target reference or explicitly inspect current material.";
+    case "CURRENT_SOURCE_REFERENCE_AMBIGUOUS": return "This Source path maps to more than one Skill. Select one exact target reference.";
+    case "CURRENT_SOURCE_EXTERNAL_REFERENCE": return "This Source path is outside the selected Skill members. It cannot be read as an imported Skill reference.";
+    case "CURRENT_SOURCE_REFERENCE_UNAVAILABLE": return "This cross-Skill link needs its current Source contribution map online. The offline policy and existing selections are unchanged.";
     default: return "Check the source configuration and access, then run /context-broker refresh.";
   }
 }
 
 export async function diagnoseNotionSource(source: NotionSource, cwd: string): Promise<{ version: string; authenticated: boolean }> {
-  const result = await run(source, cwd, ["ctl", "doctor", ...(source.database ? ["--database", source.database] : [])]);
+  const result = await run(source, cwd, ["ctl", "doctor", ...(source.library ? ["--library", source.library] : [])]);
   if (result.transport !== "direct_http" || result.notion_api_version !== "2026-03-11") throw new SourceError("SOURCE_PROTOCOL_UNSUPPORTED", source.id);
   if (result.authentication !== "available") decodeError(source);
   return { version: result.notion_api_version, authenticated: true };
@@ -218,7 +346,7 @@ async function run(source: NotionSource, cwd: string, args: string[], signal?: A
         }
         const externalCode = typeof value.error.code === "string" && (CLI_CODES[value.error.code] === true
           || args[0] === "prepare" && /^(?:PREPARE_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(value.error.code)) ? value.error.code : "SOURCE_COMMAND_FAILED";
-        reject(new SourceError(externalCode, source.id, code ?? undefined, args[0] === "prepare" ? preparationFailureDetails(details) : undefined)); return;
+        reject(new SourceError(externalCode, source.id, code ?? undefined, preparationFailureDetails(details))); return;
       }
       if (code !== 0 || value.ok !== true) { reject(new SourceError("SOURCE_COMMAND_FAILED", source.id, code ?? undefined)); return; }
       resolveResult(value);
@@ -248,102 +376,11 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
   if (!(await lstat(path)).isDirectory() || await realpath(path) !== resolve(path)) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
 }
 
-const CATALOG_CACHE_VERSION = 4;
-const CATALOG_ORDER = /^[0-9]{20}$/;
-const MAX_CATALOG_ORDER = "18446744073709551615";
-type CatalogCache = { key: string; path: string; maxAgeMs: number };
 CLI_CODES.LIST_CURSOR_STALE = true;
-async function catalogCache(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<CatalogCache | undefined> {
-  if (source.discovery?.offline) return undefined;
-  try {
-    const probeSignal = AbortSignal.timeout(5_000);
-    const identity = await run(source, cwd, ["ctl", "cache", "identity", ...(source.database ? ["--database", source.database] : [])], signal ? AbortSignal.any([signal, probeSignal]) : probeSignal);
-    if (typeof identity.identity !== "string" || !HASH.test(identity.identity) || !Number.isSafeInteger(identity.catalog_max_age_ms) || Number(identity.catalog_max_age_ms) < 0) return undefined;
-    const key = createHash("sha256").update(JSON.stringify([CATALOG_CACHE_VERSION, identity.identity])).digest("hex");
-    return { key, path: join(await cacheRoot(source, cwd), "catalogs-v4", key), maxAgeMs: Number(identity.catalog_max_age_ms) };
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    // Older/custom source commands can still discover normally without this optional capability.
-    return undefined;
-  }
-}
-
-async function latestCatalogOrder(directory: string, source: NotionSource, type: "file" | "directory"): Promise<string | undefined> {
-  let latest: string | undefined;
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (!CATALOG_ORDER.test(entry.name) || entry.name === "00000000000000000000" || entry.name > MAX_CATALOG_ORDER) continue;
-    if (type === "file" ? !entry.isFile() : !entry.isDirectory()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
-    if (latest === undefined || entry.name > latest) latest = entry.name;
-  }
-  return latest;
-}
-
-async function reserveCatalogOrder(cache: CatalogCache, source: NotionSource, signal?: AbortSignal): Promise<string> {
-  const claims = join(cache.path, "claims");
-  await privateDirectory(claims, source);
-  while (true) {
-    if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-    const latest = await latestCatalogOrder(claims, source, "file");
-    const order = ((latest === undefined ? 0n : BigInt(latest)) + 1n).toString().padStart(20, "0");
-    if (order > MAX_CATALOG_ORDER) throw new SourceError("SOURCE_STORAGE_ERROR", source.id);
-    try {
-      await writeFile(join(claims, order), "", { flag: "wx", mode: 0o600 });
-      return order;
-    } catch (error) {
-      if (!object(error) || error.code !== "EEXIST") throw error;
-    }
-  }
-}
-
-async function readCatalog(cache: CatalogCache, source: NotionSource): Promise<Json | undefined> {
-  const published = join(cache.path, "published");
-  await privateDirectory(published, source);
-  const order = await latestCatalogOrder(published, source, "directory");
-  if (order === undefined) return undefined;
-  const directory = join(published, order);
-  await privateDirectory(directory, source);
-  const path = join(directory, "receipt.json");
-  const info = await lstat(path);
-  if (info.isSymbolicLink()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
-  if (!info.isFile() || info.size > 16 * 1024 * 1024) return undefined;
-  const value: unknown = JSON.parse(await readFile(path, "utf8"));
-  // The maximum directory remains an ordering fence even when its receipt is invalid.
-  return object(value) && value.version === CATALOG_CACHE_VERSION && value.key === cache.key && value.order === order && object(value.result) && typeof value.indexId === "string" && UUID.test(value.indexId) ? value : undefined;
-}
-
-async function commandCatalog(source: NotionSource, cwd: string, selectors: string[], options: Options): Promise<Json> {
-  const first = await run(source, cwd, ["list", ...selectors, ...policyArgs(source.discovery, options.refresh)], options.signal);
-  // Older explicit commands return one full directory. New bounded lists must
-  // finish their continuation before they can become a full-library cache entry.
-  if (first.has_more === undefined) {
-    if (first.total_count !== undefined || first.next_cursor !== undefined) decodeError(source);
-    return first;
-  }
-  const records: unknown[] = [], cursors = new Set<string>();
-  let page = first, bytes = 0;
-  const identity = (value: Json) => [value.fetched_at, value.databases, value.coverage, value.view, value.view_selection,
-    value.capability_directory, object(value.profile) ? [value.profile.library_id, value.profile.library_entry,
-      value.profile.profile_id, value.profile.revision_id, value.profile.selection] : value.profile];
-  while (true) {
-    if (page.scope !== first.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-    if (!isDeepStrictEqual(identity(page), identity(first)) || !Array.isArray(page.records) || page.count !== page.records.length
-      || !Number.isSafeInteger(page.total_count) || Number(page.total_count) < 0 || page.total_count !== first.total_count
-      || typeof page.has_more !== "boolean") decodeError(source);
-    bytes += Buffer.byteLength(JSON.stringify(page.records));
-    if (bytes > 16 * 1024 * 1024) throw new SourceError("SOURCE_RESPONSE_TOO_LARGE", source.id);
-    records.push(...page.records);
-    if (records.length > Number(first.total_count)) decodeError(source);
-    if (!page.has_more) {
-      if (records.length !== first.total_count || page.next_cursor !== null) decodeError(source);
-      return { ...first, records, count: records.length, has_more: false, next_cursor: null };
-    }
-    if (!page.records.length || records.length >= Number(first.total_count) || typeof page.next_cursor !== "string"
-      || !page.next_cursor || page.next_cursor.length > 4096 || page.next_cursor.includes("\0") || cursors.has(page.next_cursor)) decodeError(source);
-    cursors.add(page.next_cursor);
-    // Continue the same core observation. Refreshing every page can mix versions.
-    page = await run(source, cwd, ["list", ...selectors, "--offline", "--cursor", page.next_cursor], options.signal);
-  }
-}
+CLI_CODES.NOTION_READ_ONLY = true;
+CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
+for (const code of ["LIBRARY_CONTEXT_REQUIRED", "LIBRARY_SCOPE_MISMATCH", "LIBRARY_INVALID", "LIBRARY_ROOT_INVALID", "LIBRARY_NOT_FOUND", "LIBRARY_DESCRIPTOR_INVALID", "LIBRARY_BINDING_INVALID", "LIBRARY_SOURCE_UNAVAILABLE", "LIBRARY_SOURCE_AMBIGUOUS", "CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "CACHE_INVALIDATED", "STATE_BUSY", "STATE_UNAVAILABLE", "STATE_RUNTIME_UNSUPPORTED", "STATE_CUTOVER_REQUIRED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
+  CLI_CODES[code] = true;
 
 async function catalogPolicy(source: NotionSource, refresh?: boolean) {
   return refresh ? { refresh: true } : source.discovery?.offline ? { offline: true }
@@ -351,35 +388,11 @@ async function catalogPolicy(source: NotionSource, refresh?: boolean) {
 }
 
 async function discoverNotionDirectory(source: NotionSource, cwd: string, options: Options, observed?: Json): Promise<{ catalog: Json; directory: NotionDirectory }> {
-  if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.database)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
+  if (source.profile_id !== undefined && (!validSharedRecordId(source.profile_id) || !source.library)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
   const selectedProfile = options.defaultView === true && options.view === undefined ? source.profile_id : undefined;
-  // SDK discovery uses the core cache directly. The derived cache remains only
-  // for explicit legacy commands; never put a filtered View under its full-library key.
-  const cache = observed || selectedView || !source.command ? undefined : await catalogCache(source, cwd, options.signal);
-  let saved: { result: Json; indexId: string } | undefined;
-  if (cache && !options.refresh) {
-    try {
-      const value = await readCatalog(cache, source);
-      if (value) {
-        const result = value.result as Json;
-        const observed = freshness(result.freshness, source);
-        const maxAge = source.discovery?.maxAge;
-        const duration = maxAge === undefined ? cache.maxAgeMs : maxAge === "0" ? 0 : Number(maxAge.slice(0, -1)) * ({ s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[maxAge.at(-1)!] ?? 0);
-        const age = Date.now() - Date.parse(String(observed.validated_at));
-        if (age >= 0 && (options.stale || age < duration)) {
-          saved = { result: { ...result, freshness: { ...observed, age_ms: age, max_age_ms: duration, stale: age >= duration } }, indexId: value.indexId as string };
-        }
-      }
-    } catch (error) {
-      if (options.signal?.aborted || error instanceof SourceError && error.code === "SOURCE_CACHE_UNSAFE") throw error;
-      // An absent or invalid derived index is rebuilt through the authoritative CLI.
-    }
-  }
-  const order = !saved && cache ? await reserveCatalogOrder(cache, source, options.signal) : undefined;
-  const result = observed ?? saved?.result ?? await (async () => {
-    if (source.command) return commandCatalog(source, cwd, [...(source.database ? ["--database", source.database] : []), ...(options.view !== undefined ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...(selectedProfile === undefined ? [] : ["--profile", selectedProfile])], options);
+  const result = observed ?? await (async () => {
     let value: unknown;
     try {
       const policy = await catalogPolicy(source, options.refresh);
@@ -387,6 +400,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
         ...(options.view !== undefined ? { view: options.view } : options.defaultView ? { defaultView: true } : {}),
         ...(selectedProfile === undefined ? {} : { profile: selectedProfile }) });
     } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+    finally { if (!selectedView && !options.signal?.aborted) options.onCatalogSettled?.(source); }
     if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
     if (!object(value)) return decodeError(source);
     return value;
@@ -395,32 +409,35 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
   if (!HASH.test(scope) || "skills" in result || !Array.isArray(result.records) || !Array.isArray(result.databases) || result.count !== result.records.length || typeof result.fetched_at !== "number" || !Number.isSafeInteger(result.fetched_at) || result.fetched_at < 0) decodeError(source);
   const observedFreshness = freshness(result.freshness, source);
   const databases = result.databases.map((value) => {
-    if (!object(value) || typeof value.database_id !== "string" || !UUID.test(value.database_id) || typeof value.title !== "string" || typeof value.alias !== "string" || (value.role !== undefined && value.role !== "content" && value.role !== "upstream") || !Array.isArray(value.data_source_ids) || !value.data_source_ids.every((id) => typeof id === "string" && UUID.test(id))) decodeError(source);
+    if (!object(value) || typeof value.database_id !== "string" || !UUID.test(value.database_id) || typeof value.title !== "string" || typeof value.alias !== "string" || (value.role !== undefined && value.role !== "content") || !Array.isArray(value.data_source_ids) || !value.data_source_ids.every((id) => typeof id === "string" && UUID.test(id))) decodeError(source);
     return { id: value.database_id, alias: value.alias, role: value.role ?? "content", sources: value.data_source_ids as string[] };
   });
   const coverage = result.coverage;
-  if (!object(coverage) || !["search_and_registered", "explicit_database", "explicit_view"].includes(String(coverage.method)) || typeof coverage.exhaustive !== "boolean" || typeof coverage.search_index_limited !== "boolean" || !Array.isArray(coverage.queried_data_sources) || !coverage.queried_data_sources.every((id) => typeof id === "string" && UUID.test(id)) || !Array.isArray(coverage.failed_sources)) decodeError(source);
+  if (!object(coverage) || !["search_and_registered", "explicit_library", "explicit_view"].includes(String(coverage.method)) || typeof coverage.exhaustive !== "boolean" || typeof coverage.search_index_limited !== "boolean" || !Array.isArray(coverage.queried_data_sources) || !coverage.queried_data_sources.every((id) => typeof id === "string" && UUID.test(id)) || !Array.isArray(coverage.failed_sources)) decodeError(source);
   for (const failed of coverage.failed_sources) if (!object(failed) || typeof failed.id !== "string" || typeof failed.code !== "string") decodeError(source);
   if (coverage.failed_sources.length && coverage.exhaustive) decodeError(source);
   const failures: SourceFailure[] = coverage.failed_sources.length ? [{ sourceId: source.id, namespace: source.namespace ?? source.id, type: "notion", code: "CATALOG_INCOMPLETE", blocking: false, message: `${coverage.failed_sources.length} records or sources could not be discovered; exact returned records remain available.` }] : [];
   const selected = selectedView ? parseViewSelection(result, source) : undefined;
-  const selectedDatabases = source.database === undefined ? undefined : UUID.test(source.database)
-    ? [source.database.replaceAll("-", "").toLowerCase()]
-    : databases.filter(database => database.role === "content" && database.alias === source.database).map(database => database.id.replaceAll("-", "").toLowerCase());
-  if (selectedDatabases && selectedDatabases.length !== 1) decodeError(source);
+  const libraryId = typeof result.library_id === "string" ? notionPageId(result.library_id) : undefined;
+  if (!libraryId || result.library_id !== libraryId || source.library !== undefined && notionPageId(source.library) !== libraryId) decodeError(source);
+  // An exact complete empty View query performs no row hydration, so Core
+  // correctly reports zero queried data sources. Keep the allocated query
+  // proof and bound View identity; an arbitrary missing coverage is not empty.
+  const verifiedEmptyView = result.records.length === 0 && coverage.exhaustive && coverage.failed_sources.length === 0
+    && coverage.queried_data_sources.length === 0 && object(result.view_query)
+    && typeof result.view_query.id === "string" && UUID.test(result.view_query.id)
+    && typeof result.view_query.expires_at === "string" && Number.isFinite(Date.parse(result.view_query.expires_at))
+    && result.view_query.total_count === 0;
   if (selected && (coverage.method !== "explicit_view" ||
     !databases.some(database => database.role === "content" && database.id === selected.database_id && database.sources.includes(selected.data_source_id)) ||
-    !coverage.queried_data_sources.includes(selected.data_source_id) ||
-    selectedDatabases !== undefined && !selectedDatabases.includes(selected.database_id.replaceAll("-", "").toLowerCase()))) decodeError(source);
+    !coverage.queried_data_sources.includes(selected.data_source_id) && !verifiedEmptyView)) decodeError(source);
   if (!selectedView && (result.profile !== undefined || result.capability_directory === true || result.view !== undefined || coverage.method === "explicit_view")) decodeError(source);
   if (selectedProfile !== undefined || result.profile !== undefined) {
     const profile = result.profile;
-    if (!options.defaultView || !object(profile) || !validSharedIdentity(profile.library_id) || !validSharedIdentity(profile.profile_id) ||
+    if (!options.defaultView || !object(profile) || profile.library_id !== libraryId || !validSharedRecordId(profile.profile_id) ||
       selectedProfile !== undefined && profile.profile_id !== selectedProfile ||
-      typeof profile.library_entry !== "string" || !UUID.test(profile.library_entry) ||
-      !databases.some(database => database.role === "content" && database.id.replaceAll("-", "").toLowerCase() === (profile.library_entry as string).replaceAll("-", "").toLowerCase()) ||
-      selectedDatabases !== undefined && !selectedDatabases.includes(profile.library_entry.replaceAll("-", "").toLowerCase()) ||
-      typeof profile.revision_id !== "string" || !/^profile-[a-f0-9]{64}$/u.test(profile.revision_id) ||
+      typeof profile.fingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(profile.fingerprint) ||
+      profile.revision_id !== undefined ||
       !["profile", "first"].includes(String(profile.selection)) || !["notion", "local_cache"].includes(String(profile.source)) ||
       result.capability_directory !== true) decodeError(source);
     freshness(profile.freshness, source);
@@ -432,54 +449,38 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
   for (const item of skills) {
     const page = createHash("sha256").update(item.id).digest("hex");
     const locator = item.locator;
-    if (locator.type === "local") decodeError(source);
-    if (locator.type === "shared_skill") {
-      if (sharedPages.has(locator.page_id)) decodeError(source);
-      sharedPages.add(locator.page_id);
-    }
-    if (object(result.profile) && (locator.type !== "shared_skill" || locator.library_id !== result.profile.library_id || locator.database_id.replaceAll("-", "").toLowerCase() !== String(result.profile.library_entry).replaceAll("-", "").toLowerCase())) decodeError(source);
-    const role = locator.type === "notion_subscription" ? "upstream" : "content";
-    const target = locator.type === "notion_subscription" ? locator.target_database_id : locator.database_id;
+    if (sharedPages.has(locator.page_id)) decodeError(source);
+    sharedPages.add(locator.page_id);
+    if (locator.library_id !== libraryId) decodeError(source);
     if (selected && (locator.database_id !== selected.database_id || locator.data_source_id !== selected.data_source_id)) decodeError(source);
-    if (seen.has(page) || !coverage.queried_data_sources.includes(locator.data_source_id) || !databases.some(database => database.id === locator.database_id && database.role === role && database.sources.includes(locator.data_source_id)) || (selectedDatabases && !selectedDatabases.includes(target.replaceAll("-", "").toLowerCase()))) decodeError(source);
+    if (seen.has(page) || !coverage.queried_data_sources.includes(locator.data_source_id) || !databases.some(database => database.id === locator.database_id && database.sources.includes(locator.data_source_id))) decodeError(source);
     seen.add(page);
     counts.set(item.alias, (counts.get(item.alias) ?? 0) + 1);
   }
-  const indexId = saved?.indexId ?? randomUUID();
+  const indexId = randomUUID();
   const index = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", indexId);
-  if (saved) {
-    const info = await lstat(index).catch(() => undefined);
-    if (!info?.isDirectory() || await realpath(index) !== resolve(index)) return discoverNotionDirectory(source, cwd, { ...options, refresh: true });
-  } else await privateDirectory(index, source);
+  await privateDirectory(index, source);
   const records: SkillRecord[] = [];
   for (const item of skills) {
     if (item.enabled === false) continue;
     const page = createHash("sha256").update(item.id).digest("hex");
     const dir = join(index, page);
-    if (!saved) await privateDirectory(dir, source);
+    await privateDirectory(dir, source);
     const path = join(dir, item.entrypoint);
     const namespace = source.namespace ?? source.id;
-    const selector = item.locator.type === "notion_page" || item.locator.type === "shared_skill" ? item.locator.page_id : item.locator.type === "notion_subscription" ? item.locator.subscription_id : item.id;
+    const selector = item.locator.page_id;
     const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
     const token = `${namespace}/${name}`;
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
     const stub = `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n`;
-    if (!saved) await writeFile(path, stub, { flag: "wx", mode: 0o600 });
-    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness, coverage });
-  }
-  if (!saved && cache && order && (await catalogCache(source, cwd, options.signal))?.key === cache.key) {
-    const published = join(cache.path, "published");
-    await privateDirectory(published, source);
-    const pending = join(cache.path, `.pending-${indexId}`);
-    await privateDirectory(pending, source);
-    const receipt = JSON.stringify({ version: CATALOG_CACHE_VERSION, key: cache.key, order, result, indexId });
-    if (Buffer.byteLength(receipt) > 16 * 1024 * 1024) throw new SourceError("SOURCE_RESPONSE_TOO_LARGE", source.id);
-    await writeFile(join(pending, "receipt.json"), receipt, { flag: "wx", mode: 0o600 });
-    if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-    await rename(pending, join(published, order));
+    await writeFile(path, stub, { flag: "wx", mode: 0o600 });
+    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness,
+      currentObservation: currentEvidence(observedFreshness, result.source), coverage });
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return { catalog: result, directory: Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
+  const directory = attachList(records, source, observedFreshness, coverage.exhaustive);
+  directory.list.scope = scope;
+  return { catalog: result, directory: Object.assign(directory, { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
 }
 
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
@@ -487,13 +488,19 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
 }
 
 /** Both projections use one SDK runtime; raw metadata stays inside that runtime. */
-export async function discoverNotionCatalogAndDirectory(source: NotionSource, cwd: string, selection: NotionDirectorySelection, options: Options = {}): Promise<{ catalog: NotionDirectoryOutcome; directory: NotionDirectoryOutcome } | undefined> {
-  if (source.command) return undefined;
+export async function discoverNotionCatalogAndDirectory(source: NotionSource, cwd: string, selection: NotionDirectorySelection, options: Options = {}): Promise<{ catalog: NotionDirectoryOutcome; directory: NotionDirectoryOutcome }> {
   let value: unknown;
+  let notified = false;
+  const onCatalogSettled = () => {
+    if (notified || options.signal?.aborted) return;
+    notified = true;
+    try { void Promise.resolve(options.onCatalogSettled?.(source)).catch(() => {}); } catch {}
+  };
   try {
-    if (!await supportsNotionSdkCatalogDirectory()) return undefined;
-    value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...await catalogPolicy(source, options.refresh), directory: selection });
+    value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...await catalogPolicy(source, options.refresh), directory: selection,
+      ...(options.onCatalogSettled ? { onCatalogSettled } : {}) });
   } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+  finally { onCatalogSettled(); }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (!object(value) || value.version !== 1) decodeError(source);
   const project = async (outcome: unknown, selected: Options): Promise<NotionDirectoryOutcome> => {
@@ -520,20 +527,14 @@ export async function discoverNotionCatalogAndDirectory(source: NotionSource, cw
   return { catalog, directory };
 }
 
-/** Resolve names before entering the exact owner path. This never prepares a body. */
-async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
+/** Qualify exact logical or physical inputs before preparation. Names are discovery only. */
+export async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const requested = parseNativeReference(input);
+  const requested = parseNotionReference(input);
+  if (!notionPageId(requested.selector) && !hasExactNativeOwner(requested) && !source.library)
+    throw new SourceError("LIBRARY_CONTEXT_REQUIRED", source.id);
   if (!requested.snapshot) {
     const { catalog, directory } = await discoverNotionDirectory(source, cwd, options);
-    // commandCatalog has already closed every page against one observation.
-    // Only its transport pagination envelope is removed, never a View/query marker.
-    let complete = catalog;
-    if (source.command && catalog.has_more !== undefined) {
-      if (catalog.has_more !== false || catalog.next_cursor !== null || catalog.total_count !== catalog.count) decodeError(source);
-      const { has_more: _more, next_cursor: _cursor, total_count: _total, ...metadata } = catalog;
-      complete = metadata;
-    }
     const selectedReference = (resolved: unknown) => {
       if (!object(resolved) || resolved.scope !== catalog.scope || typeof resolved.ref !== "string") decodeError(source);
       const record = contentRecord(resolved.record, source), selected = directory.find(item => item.id === record.id);
@@ -541,11 +542,27 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
       const canonical = parseNativeReference(resolved.ref);
       if (!selected || !isDeepStrictEqual(record, raw) || canonical.selector !== parseNativeReference(record.ref).selector
         || canonical.snapshot !== undefined || canonical.path !== (requested.path || record.entrypoint)
-        || canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+        || !notionPageId(requested.selector) && bindNativeReference(requested, record.locator.library_id).selector !== record.id) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
       return { record: selected, ref: resolved.ref };
     };
+    const physicalPage = notionPageId(requested.selector);
+    if (physicalPage !== undefined) {
+      // An exact physical address does not assert name uniqueness. Use only the
+      // owner observed in this authorized catalog, including its enabled state.
+      const records = Array.isArray(catalog.records) ? catalog.records.map(value => contentRecord(value, source)) : decodeError(source);
+      const matches = records.filter(record => notionPageId(record.locator.page_id) === physicalPage);
+      if (matches.length > 1) decodeError(source);
+      const record = matches[0];
+      if (!record) {
+        if (!object(catalog.coverage) || catalog.coverage.exhaustive !== true) throw new SourceError("CATALOG_INCOMPLETE", source.id);
+        throw new SourceError("SKILL_NOT_FOUND", source.id);
+      }
+      if (record.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
+      const ref = nativeFileRef(record.id, requested.path || record.entrypoint);
+      return selectedReference({ record, scope: catalog.scope, ref });
+    }
     let resolved: unknown;
-    try { resolved = await resolveNotionCatalogReferenceSdk(input, complete); }
+    try { resolved = await resolveNotionCatalogReferenceSdk(input, catalog); }
     catch (error) {
       const failure = sdkFailure(error, source, "list", options.signal);
       if (!(failure instanceof SourceError) || failure.code !== "SKILL_AMBIGUOUS") throw failure;
@@ -557,9 +574,7 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
         const record = contentRecord(value, source);
         if (seen.has(record.id) || selectors.filter(item => object(item) && item.id === record.id && item.ref === record.ref).length !== 1) decodeError(source);
         seen.add(record.id);
-        const ref = record.ref.slice(0, record.ref.lastIndexOf("/") + 1)
-          + (requested.path || record.entrypoint).split("/").map(encodeURIComponent).join("/")
-          + (requested.fileId === undefined ? "" : "?file_id=" + encodeURIComponent(requested.fileId));
+        const ref = nativeFileRef(record.id, requested.path || record.entrypoint);
         return selectedReference({ record, scope: catalog.scope, ref });
       });
       throw new SourceReferenceAmbiguity(source.id, candidates);
@@ -569,46 +584,26 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
   }
   let value: unknown;
   try {
-    value = source.command
-      ? await run(source, cwd, ["files", input, ...(source.database ? ["--database", source.database] : []), ...(source.activation?.offline ? ["--offline"] : [])], options.signal)
-      : await listNotionFilesSdk(input, { ...sdkOptions(source, cwd, options.signal), ...(source.activation?.offline ? { offline: true } : {}) });
+    value = await listNotionFilesSdk(input, { ...sdkOptions(source, cwd, options.signal), ...(source.activation?.offline ? { offline: true } : {}) });
   } catch (error) { if (error instanceof SourceError) throw error; throw sdkFailure(error, source, "read", options.signal); }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (!object(value) || !Array.isArray(value.files) || value.snapshot_id !== requested.snapshot || !HASH.test(String(value.scope))
     || typeof value.version_id !== "string" || !value.version_id) decodeError(source);
   const record = contentRecord(value.record, source), owner = parseNativeReference(record.ref), main = parseNativeReference(text(value.ref, source));
-  if (![record.name, record.alias, record.id, owner.selector].includes(requested.selector)) throw new SourceError("SNAPSHOT_CONFLICT", source.id);
+  const physical = notionPageId(requested.selector);
+  if (physical === undefined ? bindNativeReference(requested, record.locator.library_id).selector !== record.id
+    : physical !== notionPageId(record.locator.page_id)) throw new SourceError("SNAPSHOT_CONFLICT", source.id);
   if (record.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   if (value.entrypoint !== record.entrypoint || main.selector !== owner.selector || main.path !== record.entrypoint || main.snapshot !== requested.snapshot
     || freshness(value.freshness, source).policy !== "pinned") decodeError(source);
-  if (source.database !== undefined) {
-    const target = record.locator.type === "notion_subscription" ? record.locator.target_database_id
-      : record.locator.type === "local" ? undefined : record.locator.database_id;
-    let database = UUID.test(source.database) ? source.database : undefined;
-    if (database === undefined && source.command) {
-      // The historical owner comes only from its manifest. This ordinary
-      // metadata lookup proves the configured database alias, not a Skill name.
-      const metadataSource = source.activation?.offline ? { ...source, discovery: { ...source.discovery, offline: true } } : source;
-      const authority = await discoverNotionDirectory(metadataSource, cwd, { signal: options.signal });
-      if (!authority.directory.list.exhaustive || authority.directory.failures.length) throw new SourceError("CATALOG_INCOMPLETE", source.id);
-      if (authority.catalog.scope !== value.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-      const databases = Array.isArray(authority.catalog.databases) ? authority.catalog.databases.filter(item => object(item)
-        && item.alias === source.database && (item.role === undefined || item.role === "content")) : [];
-      if (databases.length !== 1 || !object(databases[0]) || typeof databases[0].database_id !== "string") decodeError(source);
-      database = databases[0].database_id;
-    }
-    // The bundled Core already resolves aliases and checks this binding for
-    // SDK files. UUIDs can also be checked without another source operation.
-    if (database !== undefined && target?.replaceAll("-", "").toLowerCase() !== database.replaceAll("-", "").toLowerCase())
-      throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  }
+  if (source.library !== undefined && notionPageId(source.library) !== record.locator.library_id)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   const selectedPath = requested.path || record.entrypoint, matches = value.files.filter(file => object(file) && file.path === selectedPath);
   const file = matches[0];
   if (matches.length !== 1 || !object(file) || typeof file.ref !== "string" || !Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)
     throw new SourceError("FILE_NOT_FOUND", source.id);
   const canonical = parseNativeReference(file.ref);
-  if (canonical.selector !== owner.selector || canonical.snapshot !== requested.snapshot || canonical.path !== selectedPath
-    || requested.fileId !== undefined && canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  if (canonical.selector !== owner.selector || canonical.snapshot !== requested.snapshot || canonical.path !== selectedPath) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // Use the same metadata-stub layout as discovery; it is not a name index or body cache.
   const index = join(await cacheRoot(source, cwd), "scopes", String(value.scope), "indexes", randomUUID(), createHash("sha256").update(record.id).digest("hex"));
   await privateDirectory(index, source);
@@ -624,18 +619,26 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
 /** Each configured source is an independent authority, even for the same logical ID. */
 export async function resolveNotionReference(input: string, sources: readonly NotionSource[], cwd: string, options: Pick<Options, "signal" | "refresh"> = {}): Promise<{ record: SkillRecord; ref: string }> {
   const matches: Array<{ record: SkillRecord; ref: string }> = [];
-  const fixed = parseNativeReference(input).snapshot !== undefined;
+  const parsed = parseNotionReference(input), fixed = parsed.snapshot !== undefined;
+  const library = hasExactNativeOwner(parsed) ? nativeReferenceLibrary(parsed) : undefined;
+  const routed = library === undefined ? sources : sources.filter(source => source.library === undefined || notionPageId(source.library) === library);
+  if (library !== undefined && !routed.length) throw new SourceError("LIBRARY_SOURCE_UNAVAILABLE", "notion");
+  if (!notionPageId(parsed.selector) && !hasExactNativeOwner(parsed) && sources.length !== 1)
+    throw new SourceError("LIBRARY_CONTEXT_REQUIRED", "notion");
   let missingSnapshot: SourceError | undefined;
-  for (const source of sources) {
+  for (const source of routed) {
     if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
     try { matches.push(await resolveNotionReferenceInSource(input, source, cwd, options)); }
     catch (error) {
       // Only complete, authorized absence can be ignored. A partial or failed
-      // source cannot be hidden by a name match in another configured scope.
+      // source cannot be hidden by a match in another configured scope. A
+      // descriptor-proven explicit Library mismatch is a separate routing result.
       if (!(error instanceof SourceError)) throw error;
       if (error instanceof SourceReferenceAmbiguity) matches.push(...error.candidates);
+      else if (hasExactNativeOwner(parsed) && error.code === "LIBRARY_SCOPE_MISMATCH") continue;
       else if (fixed && error.code === "SNAPSHOT_MISSING") missingSnapshot ??= error;
-      else if (error.code !== "SKILL_NOT_FOUND") throw error;
+      else if (!fixed && error.code === "SKILL_NOT_FOUND") continue;
+      else throw error;
     }
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", "notion");
@@ -658,7 +661,7 @@ function parseViewSelection(result: Json, source: NotionSource): NotionView | nu
   return parseView(result.view, source);
 }
 export async function listNotionViews(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<NotionView[]> {
-  const result = await run(source, cwd, ["ctl", "views", ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.discovery)], signal);
+  const result = await run(source, cwd, ["ctl", "views", ...(source.library ? ["--library", source.library] : []), ...policyArgs(source.discovery)], signal);
   if (!Array.isArray(result.views) || result.count !== result.views.length) decodeError(source);
   return result.views.map(view => parseView(view, source));
 }
@@ -691,158 +694,51 @@ function nativeBindings(value: unknown, source: NotionSource): readonly NativeFi
     return { file_id: item.file_id, page_id: item.page_id, path };
   });
 }
-async function inventory(directory: string, source: NotionSource): Promise<Array<{ path: string; bytes: number; hash: string }>> {
-  const items: Array<{ path: string; bytes: number; hash: string }> = [];
-  async function walk(dir: string) {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      const file = join(dir, entry.name);
-      if (entry.isSymbolicLink()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
-      if (entry.isDirectory()) await walk(file);
-      else if (entry.isFile()) {
-        const path = relative(directory, file).split(sep).join("/");
-        if (path === ".broker-snapshot.json") continue;
-        const bytes = await readFile(file);
-        items.push({ path, bytes: bytes.length, hash: createHash("sha256").update(bytes).digest("hex") });
-      } else throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
-    }
-  }
-  await walk(directory);
-  return items.sort((a, b) => a.path.localeCompare(b.path));
+/** Source-relative identity is owned by Core. Do not read a target before the
+ * host has applied that target's independent fixed session selection. */
+export async function resolveNotionRelativeReference(record: SkillRecord, from: string, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string> {
+  if (record.sourceId !== source.id || !record.sourceScope || record.locator?.type !== "shared_skill")
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  const base = parseNativeReference(from);
+  if (base.selector !== record.id || !base.snapshot || !base.path) throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
+  let value: unknown;
+  try { value = await resolveNotionReferenceSdk(path, { ...sdkOptions(source, cwd, signal), from, ...(source.activation?.offline ? { offline: true } : {}) }); }
+  catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  if (!object(value) || value.version !== 1 || value.from !== from || typeof value.ref !== "string") decodeError(source);
+  policy?.observeEffects?.(consumptionEffects(value.effects));
+  const target = parseNativeReference(value.ref);
+  const authored = path.startsWith("skill://") ? bindNativeReference(parseNativeReference(path), record.locator.library_id) : undefined;
+  if (!hasExactNativeOwner(target)
+    || !path.startsWith("skill://") && nativeReferenceLibrary(target) !== record.locator.library_id
+    || authored !== undefined && (authored.selector !== target.selector || authored.path && authored.path !== target.path
+      || authored.snapshot !== undefined && authored.snapshot !== target.snapshot)
+    || target.selector === base.selector && target.snapshot !== base.snapshot)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  return value.ref;
 }
 
+/** A direct load shares the same SDK preparation and complete resource directory. */
 export async function loadNotionSkill(record: SkillRecord, source: NotionSource, cwd: string, options: Options = {}): Promise<SkillRecord> {
   if (record.sourceId !== source.id || !record.id || !record.ref || !record.locator || record.locator.type === "local" || !record.sourceScope || !HASH.test(record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   const selected = contentRecord({ id: record.id, kind: record.kind, locator: record.locator, name: record.name, alias: record.alias, description: record.description, default_context: record.default_context, ...(record.enabled === undefined ? {} : { enabled: record.enabled }), entrypoint: record.entrypoint, ref: record.ref }, source);
   if (selected.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
-  const sameIdentity = (item: ContentRecord) => item.id === selected.id && item.kind === selected.kind && isDeepStrictEqual(item.locator, selected.locator) && item.entrypoint === selected.entrypoint && item.ref === selected.ref;
   if (options.snapshotId !== undefined && !SNAPSHOT.test(options.snapshotId)) throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
-  const read = await run(source, cwd, ["read", options.snapshotId ? `${record.ref}?snapshot=${options.snapshotId}` : record.ref, ...(source.database ? ["--database", source.database] : []), ...(options.snapshotId ? [] : policyArgs(source.activation))], options.signal, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
-  if ("skill" in read || "skill_name" in read) decodeError(source);
-  const current = contentRecord(read.record, source);
-  if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
-  const snapshot = text(read.snapshot_id, source);
-  if (options.snapshotId && snapshot !== options.snapshotId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  const version = text(read.version_id, source);
-  // Names and aliases may change after selection; the exact page, scope and entry remain authoritative.
-  if (!sameIdentity(current) || !SNAPSHOT.test(snapshot) || read.scope !== record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  const fileBindings = nativeBindings(read.file_bindings, source);
-  let pinnedReference: ReturnType<typeof parseNativeReference>;
-  try { pinnedReference = parseNativeReference(text(read.ref, source)); }
-  catch { return decodeError(source); }
-  const mainBinding = fileBindings?.find(binding => binding.path === current.entrypoint);
-  if (pinnedReference.selector !== parseNativeReference(current.ref).selector
-    || pinnedReference.path !== current.entrypoint || pinnedReference.snapshot !== snapshot
-    || pinnedReference.fileId !== mainBinding?.file_id || fileBindings && !mainBinding
-    || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)) decodeError(source);
-  if (typeof read.content !== "string" || read.has_more !== false || !object(read.range) || typeof read.range.total_lines !== "number" || !Number.isSafeInteger(read.range.total_lines) || read.range.total_lines < 1 || read.range.start !== 1 || read.range.end !== read.range.total_lines || read.path !== current.entrypoint || read.entrypoint !== current.entrypoint) decodeError(source);
-  const observedFreshness = freshness(read.freshness, source);
-  const parent = join(await cacheRoot(source, cwd), "scopes", record.sourceScope, "records", createHash("sha256").update(current.id).digest("hex"), "snapshots");
-  await privateDirectory(parent, source);
-  const destination = join(parent, snapshot);
-  try {
-    await lstat(destination);
-    await privateDirectory(destination, source);
-    let receipt: unknown;
-    try { receipt = JSON.parse(await readFile(join(destination, ".broker-snapshot.json"), "utf8")); }
-    catch { throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id); }
-    if (object(receipt) && receipt.version === 2) {
-      // v2 cached the source projection as if it were the host snapshot. Rebuild once;
-      // retain the old directory for inspection instead of interpreting its bytes.
-      try { await rename(destination, join(parent, `.invalidated-${snapshot}-${randomUUID()}`)); }
-      catch (error) { if (!object(error) || error.code !== "ENOENT") throw error; }
-    } else {
-      if (!object(receipt) || receipt.version !== 3) throw new SourceError("SOURCE_CACHE_VERSION_UNSUPPORTED", source.id);
-      if (receipt.projection !== "snapshot" || receipt.scope !== record.sourceScope || !isDeepStrictEqual(receipt.record, current) || receipt.snapshot !== snapshot || receipt.notionVersion !== version || typeof receipt.contentId !== "string" || !HASH.test(receipt.contentId) || !Array.isArray(receipt.files)) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
-      const entry = portablePath(receipt.entry, source);
-      if (entry !== current.entrypoint || await readFile(join(destination, entry), "utf8") !== read.content) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
-      if (!isDeepStrictEqual(await inventory(destination, source), receipt.files)) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
-      if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-      const path = join(destination, entry);
-      return { ...record, ...current, upstream: current.upstream, path, body: read.content, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, ...(fileBindings === undefined ? {} : { fileBindings }) };
-    }
-  } catch (error) { if (!object(error) || error.code !== "ENOENT") throw error; }
-  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const stage = join(parent, `.stage-${randomUUID()}`);
-  const exported = await run(source, cwd, ["export", snapshot, "--projection", "snapshot", "--format", "directory", "--output", stage], options.signal);
-  if ("skill" in exported || "skill_name" in exported) decodeError(source);
-  const exportedRecord = contentRecord(exported.record, source);
-  if (exported.projection !== "snapshot") throw new SourceError("SOURCE_EXPORT_PROJECTION_INVALID", source.id);
-  if (!sameIdentity(exportedRecord) || !isDeepStrictEqual(exportedRecord, current) || exported.entrypoint !== current.entrypoint || exported.ref !== read.ref || exported.snapshot_id !== snapshot || exported.version_id !== version || exported.scope !== record.sourceScope || exported.operation !== "export" || exported.format !== "directory" || exported.output !== stage || typeof exported.reused !== "boolean" || typeof exported.content_id !== "string" || !HASH.test(exported.content_id) || !Array.isArray(exported.files)) decodeError(source);
-  if (freshness(exported.freshness, source).policy !== "pinned") decodeError(source);
-  const main = portablePath(exported.main_path, source);
-  if (main !== current.entrypoint) decodeError(source);
-  const expected = exported.files.map((value) => {
-    if (!object(value) || typeof value.bytes !== "number" || !Number.isSafeInteger(value.bytes) || value.bytes < 0 || typeof value.hash !== "string" || !HASH.test(value.hash)) decodeError(source);
-    const path = portablePath(value.path, source);
-    const role = path === main ? "entrypoint" : path === ".ntn-skills.json" ? "manifest" : path === "ntn-skills-source.zip" ? "source_bundle" : "resource";
-    if (value.role !== role) decodeError(source);
-    return { path, bytes: value.bytes, hash: value.hash };
-  }).sort((a, b) => a.path.localeCompare(b.path));
-  const expectedPaths = new Set(expected.map((item) => item.path));
-  if (expectedPaths.size !== expected.length || !expectedPaths.has(main) || !expectedPaths.has(".ntn-skills.json") || expectedPaths.has(".broker-snapshot.json")) decodeError(source);
-  await privateDirectory(stage, source);
-  const actual = await inventory(stage, source);
-  if (!isDeepStrictEqual(actual, expected)) throw new SourceError("SOURCE_EXPORT_INCOMPLETE", source.id);
-  let manifest: unknown;
-  try { manifest = JSON.parse(await readFile(join(stage, ".ntn-skills.json"), "utf8")); }
-  catch { throw new SourceError("SOURCE_EXPORT_INCOMPLETE", source.id); }
-  if (!object(manifest) || manifest.format !== "ntn-skills" || manifest.version !== 2) throw new SourceError("SOURCE_PORTABLE_FORMAT_UNSUPPORTED", source.id);
-  if (manifest.kind !== current.kind || manifest.main !== main || manifest.name !== current.name || manifest.description !== current.description) decodeError(source);
-  const entry = main;
-  if (await readFile(join(stage, entry), "utf8") !== read.content) throw new SourceError("SOURCE_EXPORT_INCOMPLETE", source.id);
-  const files = actual;
-  const receipt = { version: 3, projection: "snapshot", scope: record.sourceScope, record: current, snapshot, notionVersion: version, contentId: exported.content_id, entry, files };
-  await writeFile(join(stage, ".broker-snapshot.json"), JSON.stringify(receipt), { flag: "wx", mode: 0o600 });
-  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  try { await rename(stage, destination); }
-  catch (error) {
-    if (!object(error) || !["EEXIST", "ENOTEMPTY"].includes(String(error.code))) throw error;
-    // Another process can publish the same immutable snapshot. Its verified bytes converge.
-    await privateDirectory(destination, source);
-    let savedReceipt: unknown;
-    try { savedReceipt = JSON.parse(await readFile(join(destination, ".broker-snapshot.json"), "utf8")); }
-    catch { throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id); }
-    if (!isDeepStrictEqual(savedReceipt, receipt) || !isDeepStrictEqual(await inventory(destination, source), files)) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
-    await rename(stage, join(parent, `.retained-${basename(stage).slice(1)}`));
-  }
-  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const path = join(destination, entry);
-  const body = await readFile(path, "utf8");
-  return { ...record, ...current, upstream: current.upstream, path, body, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, ...(fileBindings === undefined ? {} : { fileBindings }) };
+  const graph = await prepareNotionSkills([record], source, cwd, {
+    purpose: "inspect", signal: options.signal, refresh: options.refresh,
+    ...(options.snapshotId === undefined ? {} : { rootPins: new Map([[record.id, options.snapshotId]]) }),
+    readOnly: true, observeEffects: options.observeEffects,
+  });
+  const loaded = graph.records.find(item => item.id === record.id);
+  if (!loaded) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+  return loaded;
 }
 
-type GraphRequest = {
+type GraphRequest = ConsumptionPolicy & {
   purpose: PreparationPurpose; sessionBindings?: readonly PreparationBinding[]; signal?: AbortSignal; rootPins?: ReadonlyMap<string, string>; refresh?: boolean;
-  prefetch?: PrefetchBudget; transport?: "sdk";
+  prefetch?: PrefetchBudget;
 };
 type PreparedNode = ReturnType<typeof decodePreparedGraph>["nodes"][number];
-async function loadPreparedEntry(metadata: SkillRecord, node: PreparedNode, source: NotionSource, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
-  const read = await run(source, cwd, ["read", node.binding.ref, ...(source.database ? ["--database", source.database] : [])], signal,
-    node.record.locator.type === "shared_skill" || node.record.locator.type === "notion_page" ? node.record.locator.page_id : undefined, node.id);
-  const current = contentRecord(read.record, source);
-  const fileBindings = nativeBindings(read.file_bindings, source);
-  const mainBinding = fileBindings?.find(binding => binding.path === current.entrypoint);
-  const observedFreshness = freshness(read.freshness, source);
-  if (!isDeepStrictEqual(current, node.record) || current.enabled === false || read.scope !== node.binding.scope ||
-    read.snapshot_id !== node.binding.snapshot_id || read.version_id !== node.binding.version_id ||
-    read.ref !== node.binding.ref || read.path !== current.entrypoint || read.entrypoint !== current.entrypoint ||
-    read.content !== node.content || read.has_more !== false || !object(read.range) ||
-    !Number.isSafeInteger(read.range.total_lines) || Number(read.range.total_lines) < 1 ||
-    read.range.start !== 1 || read.range.end !== read.range.total_lines ||
-    mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id) ||
-    fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id ||
-    read.materialization !== undefined && (!object(read.materialization) || read.materialization.manifest_complete !== true) ||
-    observedFreshness.policy !== "pinned") {
-    throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-  }
-  const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: observedFreshness,
-    preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
-    ...(fileBindings === undefined ? {} : { fileBindings }),
-  };
-  return publishNotionEntry(record, node.files, await cacheRoot(source, cwd), path => privateDirectory(path, source), signal);
-}
-
 /** consume already proves complete source bytes and File bindings; no second CLI read is needed. */
 async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entry: Json, source: NotionSource, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
   if (!object(entry.manifest) || !object(entry.source_body)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
@@ -856,9 +752,10 @@ async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entr
     || body.bytes !== node.bytes || body.has_more !== false || !object(body.range) || body.range.start !== 1
     || body.range.end !== body.range.total_lines || !Number.isSafeInteger(body.range.total_lines) || Number(body.range.total_lines) < 1
     || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)
-    || fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: { policy: "pinned" },
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? { policy: "pinned" },
+    currentObservation: currentEvidence(node.freshness, node.source),
     preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
     ...(fileBindings === undefined ? {} : { fileBindings }),
   };
@@ -866,25 +763,20 @@ async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entr
 }
 
 function fixedOwnerBinding(record: ContentRecord, scope: string, snapshot: string, version: string, mainHash: string, bindings: readonly NativeFileBinding[] | undefined): PreparationBinding {
-  const owner = parseNativeReference(record.ref), query = new URLSearchParams({ snapshot });
-  const main = bindings?.find(file => file.path === record.entrypoint);
-  if (main) query.set("file_id", main.file_id);
+  nativeFileBinding({ fileBindings: bindings }, record.entrypoint);
   return { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: mainHash,
-    ref: "skill://" + encodeURIComponent(owner.selector) + "/" + record.entrypoint.split("/").map(encodeURIComponent).join("/") + "?" + query.toString() };
+    ref: nativeFileRef(record.id, record.entrypoint, snapshot) };
 }
 
 /** A single scalar SDK operation materializes the exact resource for native read.
- * Unsupported transports and main File aliases retain their existing route. */
-export async function readFixedNotionResource(record: SkillRecord, fixedRef: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<FixedResourceRead | undefined> {
-  if (transport !== "sdk" || source.command) return undefined;
+ * The selected manifest entry uses SDK preparation after owner resolution. */
+export async function readFixedNotionResource(record: SkillRecord, fixedRef: string, source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined> {
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope || !HASH.test(record.sourceScope))
     throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   const requested = parseNativeReference(fixedRef);
   if (!requested.path || !requested.snapshot || requested.selector !== parseNativeReference(record.ref).selector)
     throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
-  try { if (!await supportsNotionSdkReadOutputProof()) return undefined; }
-  catch (error) { throw sdkFailure(error, source, "read", signal, record); }
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const cache = await cacheRoot(source, cwd), stage = join(cache, ".resource-stage-" + randomUUID());
   await privateDirectory(stage, source);
@@ -892,6 +784,7 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
   let value: unknown;
   try { value = await readNotionSdk(fixedRef, { ...sdkOptions(source, cwd, signal), output, ...(source.activation?.offline ? { offline: true } : {}) }); }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+  policy?.observeEffects?.(consumptionEffects(object(value) ? value.effects : undefined));
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (!object(value) || typeof value.sha256 !== "string" || !HASH.test(value.sha256)
     || typeof value.entrypoint_sha256 !== "string" || !HASH.test(value.entrypoint_sha256)
@@ -902,8 +795,7 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
   const bound = bindings?.find(file => file.path === value.path), snapshotId = requested.snapshot;
   if (value.scope !== record.sourceScope || current.id !== record.id || current.kind !== record.kind || !isDeepStrictEqual(current.locator, record.locator)
     || value.snapshot_id !== snapshotId || value.entrypoint !== current.entrypoint || canonicalOwner.selector !== requested.selector
-    || ref.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || ref.path !== value.path || ref.fileId !== bound?.file_id
-    || requested.fileId !== undefined && requested.fileId !== ref.fileId || requested.fileId === undefined && requested.path !== ref.path)
+    || ref.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || ref.path !== value.path || requested.path !== ref.path)
     throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   if (value.output !== output || typeof value.reused !== "boolean" || freshness(value.freshness, source).policy !== "pinned"
     || value.materialization !== undefined && (!object(value.materialization) || value.materialization.manifest_complete !== true))
@@ -913,7 +805,7 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
     return undefined;
   }
   const file: ResourceReadFileIdentity = { requested_ref: fixedRef, ref: value.ref, path: value.path, bytes: Number(value.bytes), sha256: value.sha256,
-    ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }) };
+    ...(bound === undefined ? {} : { file_id: bound.file_id }) };
   const resourceRecord: SkillRecord = { ...record, snapshotId, versionId: value.version_id, entrypoint: current.entrypoint, fileBindings: bindings };
   const materialized = await publishNotionResourceFile(resourceRecord, file, output, cache, target => privateDirectory(target, source), signal);
   return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: value.version_id },
@@ -921,18 +813,15 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
     entrypoint: current.entrypoint, file: materialized };
 }
 
-export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<string> {
+export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string> {
   if (record.sourceId !== source.id || !record.entryManifest || !record.snapshotId || !record.sourceScope || !record.preparationBinding)
     throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   return materializeNotionEntryFile(record, path, target => privateDirectory(target, source), async (file, output) => {
-    let response: Json;
-    if (transport === "sdk" && !source.command) {
-      let value: unknown;
-      try { value = await readNotionSdk(file.ref, { ...sdkOptions(source, cwd, signal), output }); }
-      catch (error) { throw sdkFailure(error, source, "read", signal); }
-      if (!object(value)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-      response = value;
-    } else response = await run(source, cwd, ["read", file.ref, "--output", output, ...(source.database ? ["--database", source.database] : [])], signal);
+    let response: unknown;
+    try { response = await readNotionSdk(file.ref, { ...sdkOptions(source, cwd, signal), output }); }
+    catch (error) { throw sdkFailure(error, source, "read", signal); }
+    if (!object(response)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    policy?.observeEffects?.(consumptionEffects(response.effects));
     const current = contentRecord(response.record, source);
     if (!isDeepStrictEqual(current, record.preparationBinding!.record) || response.scope !== record.sourceScope ||
       response.snapshot_id !== record.snapshotId || response.version_id !== record.versionId ||
@@ -946,21 +835,21 @@ export async function loadNotionResource(record: SkillRecord, path: string, sour
 
 /** One SDK operation verifies the owner manifest and reads only the selected
  * resources. This path never prepares, opens or publishes the main Skill body. */
-export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal): Promise<ResourceReadBatch> {
+export async function readNotionResources(record: SkillRecord, refs: readonly string[], budget: ResourceReadBudget, source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch> {
   if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  // A custom source command owns its transport. Do not silently switch its data
-  // or credentials to the bundled SDK when it has no resource-batch contract.
-  if (source.command) throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", source.id);
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const request = { version: 1, refs: [...refs], budget: DEFAULT_RESOURCE_READ_BUDGET };
+  const request = { version: 1, refs: [...refs], budget };
   let value: unknown;
   try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}) }); }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
-  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
-  if (object(value) && value.status === "failed") throw sdkFailure(value.error, source, "read", signal, record);
+  const effects = consumptionEffects(object(value) ? value.effects : undefined);
+  policy?.observeEffects?.(effects);
+  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects });
+  if (object(value) && value.status === "failed") throw sdkFailure(object(value.error) ? { ...value.error,
+    details: { ...(object(value.error.details) ? value.error.details : {}), effects } } : value.error, source, "read", signal, record);
   if (!object(value) || value.version !== 1 || value.status !== "ready" || !object(value.manifest) || !object(value.selection)
     || !Array.isArray(value.files) || value.files.length !== refs.length || !object(value.budget)
-    || !isDeepStrictEqual(value.budget, DEFAULT_RESOURCE_READ_BUDGET) || typeof value.manifest_sha256 !== "string" || !HASH.test(value.manifest_sha256)) decodeError(source);
+    || !isDeepStrictEqual(value.budget, budget) || typeof value.manifest_sha256 !== "string" || !HASH.test(value.manifest_sha256)) decodeError(source);
   const manifest = value.manifest, selection = value.selection, current = contentRecord(manifest.record, source);
   if (manifest.complete !== true || manifest.scope !== record.sourceScope || current.id !== record.id || current.kind !== record.kind
     || !isDeepStrictEqual(current.locator, record.locator) || manifest.entrypoint !== current.entrypoint
@@ -981,79 +870,51 @@ export async function readNotionResources(record: SkillRecord, refs: readonly st
     const bound = bindings?.find(file => file.path === raw.path);
     const declared = manifestFiles.find(file => object(file) && file.path === raw.path);
     if (ref.selector !== canonicalOwner.selector || requested.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || requested.snapshot !== snapshotId
-      || ref.path !== raw.path || ref.fileId !== raw.file_id || ref.fileId !== bound?.file_id || raw.path === current.entrypoint
-      || requested.fileId !== undefined && requested.fileId !== ref.fileId || requested.fileId === undefined && requested.path !== ref.path
+      || ref.path !== raw.path || raw.file_id !== bound?.file_id || raw.path === current.entrypoint
+      || requested.path !== ref.path
       || !object(declared) || declared.bytes !== raw.bytes || declared.sha256 !== raw.sha256) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-    const key = ref.fileId === undefined ? "path:" + ref.path : "file:" + ref.fileId;
+    const key = bound === undefined ? "path:" + ref.path : "file:" + bound.file_id;
     if (seen.has(key)) throw new SourceError("RESOURCE_SELECTION_CONFLICT", source.id);
     seen.add(key);
     return { requested_ref: refs[index]!, ref: raw.ref, path: raw.path, bytes: Number(raw.bytes), sha256: raw.sha256,
-      ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }), encoding: raw.encoding as "utf8" | "base64", content: raw.content };
+      ...(bound === undefined ? {} : { file_id: bound.file_id }), encoding: raw.encoding as "utf8" | "base64", content: raw.content };
   });
   const resourceRecord: SkillRecord = { ...record, snapshotId, versionId: manifest.version_id, entrypoint: current.entrypoint, fileBindings: bindings };
   const files = await materializeNotionResourceBatch(resourceRecord, selected, await cacheRoot(source, cwd), target => privateDirectory(target, source), signal);
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: manifest.version_id },
-    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value };
+    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...budget }, machine: value, effects };
 }
 async function requestPreparedGraph(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: GraphRequest) {
   if (!records.length || records.some(record => record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  const targets = records.map(record => input.rootPins?.has(record.id!) ? record.ref! + "?snapshot=" + input.rootPins.get(record.id!) : record.ref!);
-  if (input.transport === "sdk" && !source.command) {
-    if (input.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-    const request = { version: 1, targets, purpose: input.purpose, freshness: await sdkFreshness(source, input.refresh),
-      ...(input.sessionBindings?.length ? { sessionBindings: input.sessionBindings } : {}),
-      ...(source.preparation ? { budget: source.preparation } : {}) };
-    let response: unknown;
-    try { response = await consumeNotionSdk(request, { ...sdkOptions(source, cwd, input.signal), ...(input.prefetch ? { execution: { priority: "prefetch",
-      timeBudgetMs: input.prefetch.maxTimeMs, queueBudgetMs: Math.min(1000, input.prefetch.maxTimeMs), rateShare: input.prefetch.rateShare } } : {}) }); }
-    catch (error) { throw sdkFailure(error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined); }
-    if (input.signal?.aborted || object(response) && response.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
-    if (object(response) && response.status === "failed") throw sdkFailure(response.error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined);
-    if (!object(response) || response.version !== 1 || response.status !== "ready" || !object(response.preparation) || !Array.isArray(response.entries)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-    let ready: ReturnType<typeof decodePreparedGraph>;
-    try { ready = decodePreparedGraph({ ...response.preparation, ok: true }, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
-    catch (error) { if (error instanceof SourceError) throw error; throw new SourceError("SOURCE_PREPARATION_INVALID", source.id); }
-    const entries = new Map<string, Json>();
-    for (const entry of response.entries) {
-      if (!object(entry) || typeof entry.id !== "string" || entries.has(entry.id)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-      entries.set(entry.id, entry);
-    }
-    if (entries.size !== ready.nodes.length || ready.nodes.some(node => !entries.has(node.id))) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-    return { ready, entries };
-  }
-  const args = ["prepare", ...targets, "--purpose", input.purpose,
-    ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation, input.refresh)];
-  if (input.prefetch) args.push("--priority", "prefetch", "--time-budget-ms", String(input.prefetch.maxTimeMs),
-    "--queue-budget-ms", String(Math.min(1000, input.prefetch.maxTimeMs)), "--rate-share", String(input.prefetch.rateShare));
-  if (input.sessionBindings?.length) {
-    const directory = join(await cacheRoot(source, cwd), "preparations");
-    await privateDirectory(directory, source);
-    const path = join(directory, randomUUID() + ".json");
-    await writeFile(path, JSON.stringify(input.sessionBindings), { flag: "wx", mode: 0o600 });
-    args.push("--session-bindings", path);
-  }
-  for (const [key, flag] of [
-    ["maxNodes", "--max-nodes"], ["maxDepth", "--max-depth"],
-    ["maxInstructionBytes", "--max-instruction-bytes"], ["maxContextBytes", "--max-context-bytes"],
-  ] as const) {
-    const value = source.preparation?.[key];
-    if (value !== undefined) args.push(flag, String(value));
-  }
-  const single = records.length === 1 ? records[0] : undefined;
-  const response = await run(source, cwd, args, input.signal,
-    single?.locator?.type === "shared_skill" || single?.locator?.type === "notion_page" ? single.locator.page_id : undefined, single?.id);
-  let ready: ReturnType<typeof decodePreparedGraph>;
-  try { ready = decodePreparedGraph(response, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
-  catch (error) {
-    if (error instanceof SourceError) throw error;
-    throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-  }
+  const targets = records.map(record => input.rootPins?.has(record.id!) ? withNativeSnapshot(record.ref!, input.rootPins.get(record.id!)!) : record.ref!);
   if (input.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return { ready, entries: undefined };
+  const request = { version: 1, targets, purpose: input.purpose, freshness: await sdkFreshness(source, input.refresh),
+    ...(input.sessionBindings?.length ? { sessionBindings: input.sessionBindings } : {}),
+    ...(source.preparation ? { budget: source.preparation } : {}) };
+  let response: unknown;
+  try { response = await consumeNotionSdk(request, { ...sdkOptions(source, cwd, input.signal), ...(input.prefetch ? { execution: { priority: "prefetch",
+    timeBudgetMs: input.prefetch.maxTimeMs, queueBudgetMs: Math.min(1000, input.prefetch.maxTimeMs), rateShare: input.prefetch.rateShare } } : {}) }); }
+  catch (error) { throw sdkFailure(error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined); }
+  const effects = consumptionEffects(object(response) ? response.effects : undefined);
+  input.observeEffects?.(effects);
+  if (input.signal?.aborted || object(response) && response.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects });
+  if (object(response) && response.status === "failed") throw sdkFailure(object(response.error) ? { ...response.error,
+    details: { ...(object(response.error.details) ? response.error.details : {}), effects } } : response.error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined);
+  if (!object(response) || response.version !== 1 || response.status !== "ready" || !object(response.preparation) || !Array.isArray(response.entries)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+  let ready: ReturnType<typeof decodePreparedGraph>;
+  try { ready = decodePreparedGraph({ ...response.preparation, ok: true, effects }, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
+  catch (error) { if (error instanceof SourceError) throw error; throw new SourceError("SOURCE_PREPARATION_INVALID", source.id); }
+  const entries = new Map<string, Json>();
+  for (const entry of response.entries) {
+    if (!object(entry) || typeof entry.id !== "string" || entries.has(entry.id)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    entries.set(entry.id, entry);
+  }
+  if (entries.size !== ready.nodes.length || ready.nodes.some(node => !entries.has(node.id))) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+  return { ready, entries };
 }
 
-/** Warm the CLI's verified cache only. No host directory, session lock or delivery is published. */
+/** Warm the SDK's verified cache only. No host directory, session lock or delivery is published. */
 export async function prefetchNotionSkills(plan: PrefetchPlan, cwd: string, signal: AbortSignal): Promise<PrefetchOutcome> {
   const { ready } = await requestPreparedGraph(plan.records, {
     ...plan.source,
@@ -1066,7 +927,7 @@ export async function prefetchNotionSkills(plan: PrefetchPlan, cwd: string, sign
   };
 }
 
-/** The selected transport prepares the graph; the host publishes only verified immutable entries. */
+/** One SDK result owns preparation, source bodies and the complete file directory. */
 export async function prepareNotionSkills(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: Omit<GraphRequest, "prefetch">): Promise<PreparedHostGraph> {
   const { ready, entries } = await requestPreparedGraph(records, source, cwd, input);
   const prepared: SkillRecord[] = [];
@@ -1080,15 +941,17 @@ export async function prepareNotionSkills(records: readonly SkillRecord[], sourc
       defaultDiscovery: selected?.defaultDiscovery ?? false,
     };
     let loaded: SkillRecord;
-    try { loaded = entries ? await loadConsumedEntry(metadata, node, entries.get(node.id)!, source, cwd, input.signal) : await loadPreparedEntry(metadata, node, source, cwd, input.signal); }
+    try {
+      const entry = entries.get(node.id);
+      if (!entry) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+      loaded = await loadConsumedEntry(metadata, node, entry, source, cwd, input.signal);
+    }
     catch (error) {
       if (!(error instanceof ReferenceMiss)) throw error;
       if (records.some(record => record.id === node.id) && !ready.required.some(edge => edge.to === node.id)) throw new ReferenceMiss(source.id, node.id);
       throw new SourceError("PREPARE_REQUIRED_UNAVAILABLE", source.id);
     }
-    const mainFileId = loaded.fileBindings?.find(binding => binding.path === loaded.entrypoint)?.file_id;
     if (loaded.body !== node.content || loaded.versionId !== node.binding.version_id
-      || parseNativeReference(node.binding.ref).fileId !== mainFileId
       || createHash("sha256").update(loaded.body).digest("hex") !== node.body_sha256 || Buffer.byteLength(loaded.body) !== node.bytes) {
       throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
     }
@@ -1097,6 +960,64 @@ export async function prepareNotionSkills(records: readonly SkillRecord[], sourc
   }
   return {
     purpose: ready.purpose, scope: ready.scope, sourceId: source.id, roots: ready.roots.map(root => root.id),
-    records: prepared, bindings: ready.session_bindings, lock: ready.graph_lock, budget: ready.budget, usage: ready.usage,
+    records: prepared, bindings: ready.session_bindings, lock: ready.graph_lock, budget: ready.budget, usage: ready.usage, effects: ready.effects,
   };
+}
+
+type SourceMemberDiscovery = { scope: string; candidates: SourceMemberCandidate[]; coverage: "complete" | "partial" };
+function sourceMemberDiscovery(value: unknown, source: NotionSource): SourceMemberDiscovery {
+  const library = source.library;
+  if (!library || !object(value) || value.version !== 1 || value.library_id !== library || typeof value.scope !== "string" || !HASH.test(value.scope)
+    || !Array.isArray(value.candidates) || !Array.isArray(value.failures) || value.coverage !== "complete" && value.coverage !== "partial"
+    || value.coverage === "complete" && value.failures.length > 0
+    || value.failures.some(failure => !object(failure) || typeof failure.source_id !== "string" || typeof failure.code !== "string")
+    || !object(value.effects) || value.effects.remote_writes !== "none") return decodeError(source);
+  const scope = value.scope;
+  const candidates = value.candidates.map(candidate => decodeSourceMemberCandidate(candidate, { library, scope }, record => contentRecord(record, source)));
+  const keys = new Set<string>();
+  for (const candidate of candidates) {
+    const key = JSON.stringify([candidate.source_id, candidate.member_key]);
+    if (keys.has(key)) return decodeError(source);
+    keys.add(key);
+  }
+  return { scope, candidates, coverage: value.coverage };
+}
+/** Resolve registered membership without producing bodies, pages or operation records. */
+export async function discoverNotionSourceMembers(source: NotionSource, cwd: string, query: string | undefined, signal?: AbortSignal, sourceId?: string): Promise<SourceMemberDiscovery> {
+  if (!source.library || source.enabled === false || source.discovery?.offline) throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  let value: unknown;
+  try { value = await discoverNotionSourceMembersSdk({ library: source.library, ...(query ? { query } : {}),
+    ...(sourceId ? { source_id: sourceId } : {}) }, sdkOptions(source, cwd, signal)); }
+  catch (error) { throw sdkFailure(error, source, "list", signal); }
+  signal?.throwIfAborted();
+  const discovery = sourceMemberDiscovery(value, source);
+  if (sourceId !== undefined && discovery.candidates.some(candidate => candidate.source_id !== sourceId)) return decodeError(source);
+  return discovery;
+}
+
+/** A fresh bounded Requires traversal, not an error-string hint, authorizes
+ * registered dependencies of an already-current native root. */
+export async function discoverNotionRequiredSourceMembers(source: NotionSource, cwd: string, root: SkillRecord, signal?: AbortSignal): Promise<
+  SourceMemberDiscovery & { root: ContentRecord; authorization: SourceMaterializationAuthorization }
+> {
+  if (!source.library || source.enabled === false || source.discovery?.offline || root.locator?.type !== "shared_skill")
+    throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  const owner = root.locator;
+  let value: unknown;
+  try { value = await discoverNotionSourceMembersSdk({ library: source.library, requires_of: owner.skill_id }, sdkOptions(source, cwd, signal)); }
+  catch (error) { throw sdkFailure(error, source, "list", signal); }
+  signal?.throwIfAborted();
+  const discovery = sourceMemberDiscovery(value, source);
+  if (!object(value) || discovery.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", source.id);
+  const current = contentRecord(value.root, source), authorization = materializationAuthorization(value.authorization_root);
+  if (current.id !== root.id || current.kind !== (root.kind ?? "skill") || !isDeepStrictEqual(current.locator, owner)
+    || discovery.scope !== root.sourceScope || authorization.skill_id !== owner.skill_id || authorization.page_id !== owner.page_id)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
+  return { ...discovery, root: current, authorization };
+}
+
+/** Management receipts reuse the same strict physical ContentRecord boundary. */
+export function decodeNotionContentRecord(value: unknown, source: NotionSource): ContentRecord {
+  return contentRecord(value, source);
 }

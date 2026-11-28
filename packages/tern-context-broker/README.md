@@ -108,7 +108,7 @@ omp -e ./packages/context-broker/src/index.ts
 
 Rebuild after TypeScript, CLI or Skill resource changes, then reinstall copied packages. Luau-only changes need another install. For live Luau development, `tern plugin link ./packages/tern-context-broker` uses the source and `tern plugin reload` reloads it. A copy must be backed up or moved to system Trash before linking; `--force` does not replace links. Use `tern plugin unlink context-broker` before returning to copied release installs. Keep logs and runtime configuration outside linked source.
 
-`bun run test:ui` drives an isolated real Tern window and OMP host with controlled provider/source fixtures. It checks automatic capsules, body counts, manual Unicode replacement, cancellation and focus changes, retaining screenshots and evidence. Pi TUI, OMP TUI, real Notion content and actual model instruction use have separate verification routes; one native-window check does not substitute for them.
+Tern and OMP acceptance is deferred while the current Broker/SDK path converges. The old CLI-fixture native-window runner is retired. Preserve separate outcomes for actual terminal/editor actions, current Notion consumption and model behavior; current Broker code or installation checks do not establish Tern UI acceptance.
 
 ## Troubleshooting
 

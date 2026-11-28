@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - next
 
 permissions:
   contents: read
@@ -15,27 +16,35 @@ concurrency:
 
 jobs:
   main:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24.22.3, 26.13.1]
     runs-on: ubuntu-latest
     env:
       NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
+      CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select frozen CLI input
+        id: cli-input
+        run: echo "revision=$(cat .github/ntn-skills-cli-revision)" >> "$GITHUB_OUTPUT"
       - name: Checkout pinned CLI SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 97ba806db80a842cd33d7327e99745d32b476e97
+          ref: ${{ steps.cli-input.outputs.revision }}
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.20.0
+          node-version: ${{ matrix.node }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build pinned CLI SDK
@@ -43,98 +52,68 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run build
-      - name: Install pinned CLI hosts
-        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0
-      - name: Check
-        run: bun run check
+      - name: Directory inventory evidence
+        run: node --test scripts/notion-agent-inventory-evidence.test.mjs
+      - name: Check current Broker
+        run: bun run check:broker
       - name: Release policy regression
         run: node --test scripts/release.test.mjs
-      - name: Native CLI host regressions
-        id: native-hosts
+      - name: Create current SDK fixture
+        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog --materialization
+      - name: Installed current SDK consumption
+        run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --report "$RUNNER_TEMP/current-sdk-artifacts.json"
+      - name: Actual Pi cross-session cache
         run: |
-          node packages/context-broker/scripts/context-broker-host-e2e.mjs
-          node packages/context-broker/scripts/context-broker-global-config-e2e.mjs
-          node packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs
-      - name: Preserve failed native host evidence
-        if: failure() && steps.native-hosts.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-host-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            /tmp/context-broker-host-e2e-*/
-            /tmp/context-broker-config-e2e-*/
-            /tmp/context-broker-lifecycle-e2e-*/
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Create controlled SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
-      - name: Create controlled name SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-name-fixture" --catalog --distinct-names
-      - name: Create controlled ambiguity SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-ambiguity-fixture" --catalog --ambiguous-names
-      - name: Installed Pi artifact regression
-        id: installed-pi
-        shell: bash
+          BROKER_PACKAGE=$(node -p 'require(process.argv[1]).package.installed' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          PI_ENTRY=$(node -p 'require(process.argv[1]).pi.entry.path' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-warm-restart" --scenario http-warm-restart
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-warm-directory-expired" --scenario http-warm-directory-expired
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-revalidate" --scenario http-smart-revalidate
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-current" --scenario http-smart-current
+      - name: Actual Pi Source materialization
         run: |
-          node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" | tee "$RUNNER_TEMP/installed-pi-artifact.log"
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { readFileSync, appendFileSync } from 'node:fs';
-          import { join, isAbsolute } from 'node:path';
-          const matches = [...readFileSync(join(process.env.RUNNER_TEMP, 'installed-pi-artifact.log'), 'utf8').matchAll(/^Artifact workspace retained: (.+)$/gm)];
-          assert.equal(matches.length, 1);
-          const manifest = JSON.parse(readFileSync(join(matches[0][1], 'manifest.json'), 'utf8'));
-          assert.equal(manifest.status, 'passed'); assert.equal(manifest.hostIdentity.version, '1.5.0');
-          assert.equal(manifest.defaultSdk.status, 'passed'); assert.ok(isAbsolute(manifest.package.installed));
-          assert.equal(manifest.namedSdk.status, 'passed');
-          assert.equal(manifest.ambiguitySdk.status, 'passed');
-          appendFileSync(process.env.GITHUB_OUTPUT, 'package=' + manifest.package.installed + '\n');
-          NODE
-      - name: Installed Pi controlled HTTP consumption
-        id: controlled-http
-        env:
-          BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
-        run: |
-          for scenario in http-directory http-cache-recovery http-interruption; do
-            node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --scenario "$scenario" --out "$RUNNER_TEMP/pi15-$scenario-evidence"
-          done
-      - name: Pi 1.4 compatibility
-        env:
-          BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
-        run: |
-          npm install --prefix "$RUNNER_TEMP/pi14-compat" --no-audit --no-fund @earendil-works/pi-coding-agent@1.4.0
-          export PATH="$RUNNER_TEMP/pi14-compat/node_modules/.bin:$PATH"
-          test "$(pi --version)" = "1.4.0"
-          node packages/context-broker/scripts/context-broker-host-e2e.mjs pi
-          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"
-          for scenario in name-references name-reference-failed-source; do
-            node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --scenario "$scenario" --out "$RUNNER_TEMP/pi14-$scenario-evidence"
-          done
-          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" --scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"
-          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"
-      - name: Preserve installed Pi SDK evidence
+          BROKER_PACKAGE=$(node -p 'require(process.argv[1]).package.installed' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          PI_ENTRY=$(node -p 'require(process.argv[1]).pi.entry.path' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-first" --scenario source-materialize-first
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-first"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-legacy" --scenario source-materialize-legacy
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-legacy"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-legacy-source" --scenario source-materialize-legacy-source
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-legacy-source"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-growth" --scenario source-materialize-growth
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-growth"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-native-root" --scenario source-materialize-native-root
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-native-root"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-cancel-late" --scenario source-materialize-cancel-late
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-cancel-late"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-cold-budget" --scenario source-materialize-cold-budget
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-cold-budget"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-cache-upgrade" --scenario source-materialize-cache-upgrade
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-cache-upgrade"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-blocked-member" --scenario source-materialize-blocked-member
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-blocked-member"
+      - name: Preserve current SDK results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installed-pi-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: installed-current-sdk-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /tmp/broker-artifacts-*/
-            /tmp/notion-sdk-pi-*/
-            /tmp/context-broker-host-e2e-*/
-            ${{ runner.temp }}/ntn-skills-sdk-fixture/
-            ${{ runner.temp }}/ntn-skills-name-fixture/
-            ${{ runner.temp }}/ntn-skills-ambiguity-fixture/
-            ${{ runner.temp }}/pi14-sdk-evidence/
-            ${{ runner.temp }}/pi14-name-references-evidence/
-            ${{ runner.temp }}/pi14-name-reference-failed-source-evidence/
-            ${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/
-            ${{ runner.temp }}/pi15-http-*-evidence/
-            ${{ runner.temp }}/pi14-http-directory-evidence/
-            ${{ runner.temp }}/installed-pi-artifact.log
+            ${{ runner.temp }}/ntn-skills-current-fixture/
+            ${{ runner.temp }}/current-sdk-artifacts.json
+            ${{ runner.temp }}/pi-warm-restart/
+            ${{ runner.temp }}/pi-warm-directory-expired/
+            ${{ runner.temp }}/pi-smart-revalidate/
+            ${{ runner.temp }}/pi-smart-current/
+            ${{ runner.temp }}/pi-source-materialize-first/
+            ${{ runner.temp }}/pi-source-materialize-legacy/
+            ${{ runner.temp }}/pi-source-materialize-legacy-source/
+            ${{ runner.temp }}/pi-source-materialize-growth/
+            ${{ runner.temp }}/pi-source-materialize-native-root/
+            ${{ runner.temp }}/pi-source-materialize-cancel-late/
+            ${{ runner.temp }}/pi-source-materialize-cold-budget/
+            ${{ runner.temp }}/pi-source-materialize-cache-upgrade/
+            ${{ runner.temp }}/pi-source-materialize-blocked-member/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
-      - name: Installed OMP and Tern artifact regression
-        run: node scripts/verify-artifacts.mjs --host omp
-      - name: Package dry run
-        run: bun run pack:dry

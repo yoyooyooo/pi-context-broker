@@ -6,6 +6,7 @@ import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/p
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { systemTempRoot, verificationCliEnvironment } from './verification-paths.mjs';
+import { nativeFileRef, nativeSkillId, parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
 
 export const CONTRACT_VERSION = 1;
 export const PROMPT_VERSION = 2;
@@ -152,14 +153,9 @@ export function evaluateGraphTrace(trace, oracle) {
 
   check(Array.isArray(trace.candidates) && trace.candidates.length > 0, 'CATALOG_MISSING', 'The actual root member directory must be observed');
   const entryIdentity = value => {
-    const match = typeof value === 'string' && /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
-    if (!match) return undefined;
     try {
-      const query = new URLSearchParams(match[3]);
-      if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
-      const parts = match[2].split('/').map(decodeURIComponent);
-      if (parts.some(part => !part || part === '.' || part === '..' || part.includes('/'))) return undefined;
-      return { owner: decodeURIComponent(match[1]), path: parts.join('/') };
+      const reference = parseNativeReference(value);
+      return hasExactNativeOwner(reference) ? { owner: reference.selector, path: reference.path } : undefined;
     } catch { return undefined; }
   };
   const targetEntry = entryIdentity(target.ref);
@@ -194,7 +190,7 @@ export function evaluateGraphTrace(trace, oracle) {
     const preparedMain = (currentUse || historicalPrepare) && item.logicalId === target.logicalId && read.role === 'entrypoint'
       && proof?.explicitRoot === true && (currentUse ? proof.purpose === 'use' : ['use', 'inspect'].includes(proof.purpose)) && proof.deliveryVerified === true
       && Array.isArray(proof.roots) && proof.roots.some(ref => {
-        try { return decodeURIComponent(/^skill:\/\/([^/?#]+)\//.exec(ref)?.[1] ?? '') === item.logicalId; } catch { return false; }
+        try { const selected = parseNativeReference(ref); return hasExactNativeOwner(selected) && selected.selector === item.logicalId; } catch { return false; }
       }) && nonempty(proof.publicRequestId) && /^[a-f0-9]{64}$/.test(proof.graphLockSha256 ?? '')
       && /^[a-f0-9]{64}$/.test(proof.manifestSha256 ?? '') && proof.publicRef === item.ref
       && proof.scope === item.scope && proof.ownerId === item.logicalId && proof.snapshot === item.snapshot
@@ -263,9 +259,10 @@ export function contractFixture(gate = 'A') {
   const body = 'Verification workflow: launch, drive, observe, retain.';
   const resource = 'Feature map: positive, negative, recovery, ownership.';
   const scope = 'fixture-connection/library';
-  const target = { name: 'create-verification-skill', logicalId: 'fixture-leaf', ref: 'skill://fixture-leaf/SKILL.md?snapshot=fixture-v1', scope, snapshot: 'fixture-v1', bodySha256: sha(body), bodyBytes: Buffer.byteLength(body), answerTokens: ['PRIVATE_ORACLE_42'] };
-  const file = { logicalId: 'fixture-feature-map', ref: 'skill://fixture-leaf/references/feature-map.md?snapshot=fixture-v1', scope, snapshot: 'fixture-v1', sha256: sha(resource), bytes: Buffer.byteLength(resource) };
-  const oracle = { version: CONTRACT_VERSION, roots: { A: { kind: 'router', selection: '$pstack@notion', ref: 'skill://fixture-router/SKILL.md' }, B: { kind: 'skill', selection: '$poteto-mode@notion', ref: 'skill://fixture-ordinary/SKILL.md' } }, target, resources: [file] };
+  const library = 'fixture-library', owner = nativeSkillId(library, 'fixture-leaf'), snapshot = 's_' + sha('fixture-v1');
+  const target = { name: 'create-verification-skill', logicalId: owner, ref: nativeFileRef(owner, 'SKILL.md', snapshot), scope, snapshot, bodySha256: sha(body), bodyBytes: Buffer.byteLength(body), answerTokens: ['PRIVATE_ORACLE_42'] };
+  const file = { logicalId: 'fixture-feature-map', ref: nativeFileRef(owner, 'references/feature-map.md', snapshot), scope, snapshot, sha256: sha(resource), bytes: Buffer.byteLength(resource) };
+  const oracle = { version: CONTRACT_VERSION, roots: { A: { kind: 'router', selection: '$pstack@notion', ref: nativeFileRef(nativeSkillId(library, 'fixture-router'), 'SKILL.md') }, B: { kind: 'skill', selection: '$poteto-mode@notion', ref: nativeFileRef(nativeSkillId(library, 'fixture-ordinary'), 'SKILL.md') } }, target, resources: [file] };
   const consumerRoots = ['/private/tmp/ng-contract-cli', '/private/tmp/ng-contract-broker', '/private/tmp/ng-contract-session'];
   const reads = [{ ...target, sha256: target.bodySha256, content: body }, { ...file, content: resource }].map((row, i) => ({ ...row, tool: 'read', origin: 'model', discovered: true, sequence: i + 2, complete: true }));
   const trace = { version: CONTRACT_VERSION, evidenceKind: 'real_model', host: 'pi', nativeEntry: true, gate, prompt: frozenPrompt(gate, oracle.roots[gate].selection), selectedRoots: [oracle.roots[gate].ref], requiredRefs: [], toolChoice: 'auto', forcedToolArguments: false, cacheMode: 'cold', isolation: { oracleRoots: ['/private/tmp/ng-contract-oracle'], consumerRoots, resolved: true, oracleObserverOnly: true, inventoryComplete: true, localSkillInventory: [], shellEnabled: false, contextFiles: false, promptTemplates: false, autoExtensions: false, prelaunch: consumerRoots.map(root => ({ root, entries: 0 })) }, candidates: [{ ref: target.ref, logicalId: target.logicalId, scope, available: true }], memberBodyReadsBeforeSelection: 0, directorySequence: 1, reads, providerRequests: [{ contents: [] }, { contents: reads.map(row => ({ ref: row.ref, content: row.content })) }], httpLedgerObserved: true, httpAttempts: [{ transport: 'direct_http', kind: 'body', requestIdAvailable: true, requestId: 'controlled-http-fixture', status: 200 }], model: { selector: 'magpie/group/flash-free', responseStatus: 200, final: { text: '验收流程已按读取的步骤与功能地图整理。', success: true, stopReason: 'stop' } }, processes: [{ owned: true, closed: true, spawnObserved: true, closeObserved: true }], unknownWrites: [], replayedUnknownWrites: false };

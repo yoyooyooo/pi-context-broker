@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { notionCatalogAction, notionListExpired } from "../src/catalog-menu";
+import { notionCatalogAction, notionListExpired, notionListFreshness } from "../src/catalog-menu";
 import { createDollarSkillAutocompleteProvider } from "../src/dollar";
-import type { AutocompleteSuggestions, DiscoveryRecord, NotionListObservation } from "../src/types";
+import type { DiscoveryRecord, NotionListObservation } from "../src/types";
+import { createCompletionSnapshot, localCompletionCandidate, type CompletionCandidate } from "../src/completion-candidates";
 
 const validated = "2026-10-19T00:00:00.000Z";
 const at = Date.parse(validated);
@@ -17,6 +18,13 @@ assert.equal(notionListExpired({ ...fresh, stale: true }, at), true);
 assert.equal(notionListExpired({ ...fresh, policy: "offline", stale: true }, at + 120_000), false);
 assert.equal(notionListExpired({ sourceId: "notion", policy: "pinned" }, at + 120_000), false);
 assert.equal(notionListExpired(undefined, at), true);
+assert.deepEqual(notionListFreshness(fresh, at + 59_999), { policy: "default", validated_at: validated, age_ms: 59_999, max_age_ms: 60_000, stale: false });
+assert.deepEqual(notionListFreshness(fresh, at + 60_000), { policy: "default", validated_at: validated, age_ms: 60_000, max_age_ms: 60_000, stale: true });
+assert.equal(notionListFreshness({ ...fresh, ageMs: 30_000 }, at + 1_000).age_ms, 30_000);
+assert.equal(notionListFreshness({ ...fresh, policy: "offline", stale: true }, at + 120_000).stale, true);
+assert.equal(notionListFreshness(fresh, at - 1).age_ms, null);
+assert.equal(notionListFreshness(fresh, at - 1).stale, null, "An unknown age cannot prove fresh metadata after clock rollback");
+assert.deepEqual(notionListFreshness(undefined, at), { policy: null, validated_at: null, age_ms: null, max_age_ms: null, stale: null });
 assert.equal(notionCatalogAction({ offline: false, sourceIds: ["notion"], observations: [fresh], failedSourceIds: [], now: at + 1_000 }), "use");
 assert.equal(notionCatalogAction({ offline: true, sourceIds: ["notion"], observations: [], failedSourceIds: ["notion"], now: at }), "use");
 assert.equal(notionCatalogAction({ offline: false, sourceIds: ["notion"], observations: [fresh], failedSourceIds: [], now: at + 60_000 }), "refresh");
@@ -35,54 +43,67 @@ const resin = {
   selectionToken: "resin@notion",
 } as DiscoveryRecord;
 const added = { ...resin, name: "Added", normalizedName: "added", selectionToken: "added@notion", path: "/cache/added/SKILL.md" } as DiscoveryRecord;
-let publish: (menu: { records: DiscoveryRecord[]; notice?: string }) => void = () => {};
-const followUp = new Promise<{ records: DiscoveryRecord[]; notice?: string }>((resolve) => { publish = resolve; });
-const provider = createDollarSkillAutocompleteProvider({
+
+const native = {
   async getSuggestions() { return null; },
-  applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; },
-}, async () => ({ records: [resin], notice: "Updating Notion catalog", followUp }));
-const partials: AutocompleteSuggestions[] = [];
-const pendingResult = provider.getSuggestions(["$re"], 0, 3, undefined, (partial) => { partials.push(partial); });
-await Promise.resolve();
-assert.equal(partials.length, 1);
-const initial = partials[0]!;
-assert.equal(initial.items[0]?.value, "$resin@notion");
-const notice = initial.items.find(item => !item.value)!;
-const kept = provider.applyCompletion(["$re"], 0, 3, notice, "$re");
-assert.deepEqual(kept, { lines: ["$re"], cursorLine: 0, cursorCol: 3 });
-const selected = provider.applyCompletion(["$re"], 0, 3, initial.items[0]!, "$re");
+  applyCompletion: (lines: string[], cursorLine: number, cursorCol: number) => ({ lines, cursorLine, cursorCol }),
+};
+const listeners = new Set<() => void>();
+let notifications = 0;
+const snapshot = createCompletionSnapshot(() => { notifications++; for (const listener of listeners) listener(); });
+const owner = {};
+const resinCandidate = localCompletionCandidate(resin), addedCandidate = localCompletionCandidate(added);
+snapshot.local([resinCandidate]);
+const accepted: CompletionCandidate[] = [];
+const provider = createDollarSkillAutocompleteProvider(native, {
+  read: snapshot.read, scope: () => owner,
+  subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+}, candidate => accepted.push(candidate));
+let updates = 0;
+const unsubscribe = provider.subscribe!(() => updates++);
+assert.equal(provider.getCompletionScope!(), owner);
+const initial = await provider.getSuggestions(["$re"], 0, 3);
+assert.deepEqual(initial?.items.map(item => item.value), ["$resin@notion"]);
+snapshot.accept(snapshot.begin("cache"), [addedCandidate], "Updating Notion catalog");
+assert.equal(updates, 1);
+assert.deepEqual((await provider.getSuggestions(["$"], 0, 1))?.items.map(item => item.value), ["$added@notion", "$resin@notion"]);
+assert.ok((await provider.getSuggestions(["$"], 0, 1))?.items.every(item => item.value), "Warnings are not selectable completion rows");
+const selected = provider.applyCompletion(["$re"], 0, 3, initial!.items[0]!, "$re");
 assert.equal(selected.lines[0], "$resin@notion ");
-publish({ records: [resin, added] });
-const result = await pendingResult;
-assert.deepEqual(result?.items.map((item) => item.value), ["$resin@notion", "$added@notion"]);
-const refreshOrder = Promise.withResolvers<{ records: DiscoveryRecord[] }>();
-const orderProvider = createDollarSkillAutocompleteProvider({
-  async getSuggestions() { return null; },
-  applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; },
-}, async () => ({ records: [resin, added], followUp: refreshOrder.promise }));
-const orderResult = orderProvider.getSuggestions(["$"], 0, 1, undefined, () => {});
-await Promise.resolve();
-refreshOrder.resolve({ records: [resin, { ...added, name: "Zulu", normalizedName: "zulu" }] });
-assert.deepEqual((await orderResult)?.items.map(item => item.value), ["$added@notion", "$resin@notion"], "A refreshed sort order must not move the user's current choice");
-const removedChoice = Promise.withResolvers<{ records: DiscoveryRecord[] }>();
-const removalProvider = createDollarSkillAutocompleteProvider({
-  async getSuggestions() { return null; },
-  applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; },
-}, async () => ({ records: [resin, added], followUp: removedChoice.promise }));
-const removalResult = removalProvider.getSuggestions(["$"], 0, 1, undefined, () => {});
-await Promise.resolve();
-removedChoice.resolve({ records: [resin] });
-assert.deepEqual((await removalResult)?.items.map(item => item.value), ["", "$resin@notion"], "A removed choice cannot silently become a different selectable item");
+assert.equal(accepted[0], resinCandidate, "Accept the exact displayed target, not a fresh lookup by token");
+
+const cache = snapshot.begin("cache");
+const freshTicket = snapshot.begin("refresh");
+snapshot.accept(freshTicket, [{ ...addedCandidate, record: { ...addedCandidate.record, name: "Zulu" } }]);
+assert.equal(snapshot.accept(cache, [resinCandidate]), false, "A late cache cannot overwrite a settled refresh");
+assert.equal(snapshot.accept(snapshot.begin("cache"), [resinCandidate]), false, "A newly read cache cannot outrank settled refresh authority");
+const oldRefresh = snapshot.begin("refresh"), newRefresh = snapshot.begin("refresh");
+snapshot.accept(newRefresh, []);
+assert.equal(snapshot.accept(oldRefresh, [addedCandidate]), false, "A late older refresh cannot resurrect a removed candidate");
+assert.deepEqual(snapshot.read().candidates, [resinCandidate], "Complete empty removes only remote candidates; local discovery remains");
+const foreign = createCompletionSnapshot(() => {});
+assert.equal(snapshot.accept(foreign.begin("refresh"), [addedCandidate]), false);
+const beforeRetire = notifications;
+snapshot.retire();
+snapshot.local([]);
+assert.equal(snapshot.accept(snapshot.begin("refresh"), [addedCandidate]), false);
+assert.equal(notifications, beforeRetire, "Retired scopes cannot publish");
+unsubscribe();
+
+const faulting = createDollarSkillAutocompleteProvider(native, {
+  read() { throw new Error("broken publisher"); }, subscribe: () => () => {}, scope: () => owner,
+});
+assert.equal(await faulting.getSuggestions(["$"], 0, 1), null);
 const cancelled = new AbortController();
-const waiting = Promise.withResolvers<{ records: DiscoveryRecord[] }>();
-const staleProvider = createDollarSkillAutocompleteProvider({
-  async getSuggestions() { return null; },
-  applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; },
-}, async () => ({ records: [], notice: "Reading Notion catalog", followUp: waiting.promise }));
-const stale = staleProvider.getSuggestions(["$re"], 0, 3, cancelled.signal);
-await Promise.resolve();
+const rejecting = createDollarSkillAutocompleteProvider({
+  ...native, async getSuggestions() { throw new Error("native provider rejected"); },
+}, { read: () => ({ candidates: [], revision: 0 }), subscribe: () => () => {}, scope: () => owner });
+assert.equal(await rejecting.getSuggestions(["plain"], 0, 5), null);
+const uncooperative = createDollarSkillAutocompleteProvider({
+  ...native, getSuggestions: () => new Promise(() => {}),
+}, { read: () => ({ candidates: [], revision: 0 }), subscribe: () => () => {}, scope: () => owner });
+const pending = uncooperative.getSuggestions(["plain"], 0, 5, cancelled.signal);
 cancelled.abort();
-assert.equal(await stale, null, "Cancelled same-draft refresh must settle without source completion");
-waiting.resolve({ records: [resin] });
+assert.equal(await pending, null, "Cancellation settles a producer that ignores AbortSignal");
 await import("./catalog-menu-session.test");
-console.log("catalog menu checks passed: fresh list stays cached, expired and failed lists refresh, a notice cannot replace the draft, and the same menu receives the updated list");
+console.log("catalog menu checks passed: memory-only filtering, snapshot notifications, exact target acceptance, stale publication fences, and failure containment");

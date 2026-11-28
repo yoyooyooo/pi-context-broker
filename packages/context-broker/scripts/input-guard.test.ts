@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -10,7 +11,7 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { SourceError } from "../src/notion-source";
 import type { ActivePreparation } from "../src/skill-preparation";
 import { softMissRegressions } from "./soft-miss-regressions.test";
-import type { ExtensionAPI, ExtensionContext, SkillRecord, DiscoveryResult, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, SkillRecord, DiscoveryResult, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult, AgentMessage, SessionEntry } from "../src/types";
 import type { HostCapabilities } from "../src/host-adapter";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
@@ -30,9 +31,13 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
   await mkdir(join(root, "startup-fixed"));
   const body = "STARTUP_SELECTED_BODY_V1";
   await writeFile(path, body);
+  // A canonical owner reaches exact metadata lookup directly. A physical page
+  // UUID instead requires the authorized page-to-owner resolver, which this
+  // focused discovery fixture deliberately does not provide.
+  const owner = "skill://entry?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
   const record: SkillRecord = {
-    kind: "skill", id: "11111111-1111-4111-8111-111111111111", sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
-    ref: "skill://11111111-1111-4111-8111-111111111111/SKILL.md", entrypoint: "SKILL.md",
+    kind: "skill", id: owner, sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
+    ref: nativeFileRef(owner, "SKILL.md"), entrypoint: "SKILL.md",
     name: "startup", token: "fixture/startup", path, description: "Startup fixture", aliases: [],
     normalizedName: "startup", normalizedAliases: [], normalizedDescription: "startup fixture", autoloadEnabled: false, defaultDiscovery: false,
   };
@@ -50,6 +55,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     const events = new Map<string, Listener[]>(), tools = new Map<string, NativeReadDefinition>();
     const requests: Array<ReturnType<typeof Promise.withResolvers<DiscoveryResult<SkillRecord>>>> = [];
     const published: SkillRecord[][] = [], notices: string[] = [], loads: SkillRecord[] = [];
+    let nativeEntries: SessionEntry[] = [], messageOrder = 0;
     let session = "startup-session", aborts = 0, entry: ActivePreparation | undefined, loaded = false, operation: AbortController | undefined;
     let load = async (selected: SkillRecord): Promise<SkillRecord> => ({ ...selected, body, snapshotId: "startup-v1" });
     const api: ExtensionAPI = {
@@ -58,7 +64,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       registerTool(tool) { tools.set(tool.name, tool); }, registerCommand() {},
     };
     const ctx: ExtensionContext = {
-      mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => [] },
+      mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => nativeEntries, getBranch: () => nativeEntries,
+        buildSessionProjection: () => ({ entries: nativeEntries.map(sourceEntry => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })),
+          messages: nativeEntries.flatMap(entry => entry.message ? [entry.message] : []) }) },
       ui: { notify: text => notices.push(text) }, abort: () => { aborts++; operation?.abort(); },
     };
     const adapter = kind === "pi" ? createPiHostAdapter(api) : createOmpHostAdapter(api);
@@ -70,7 +78,12 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       onMetadata: records => published.push(records), onPreparation: value => { entry = value; },
       needsPreflightPrompt: text => parseInvocations(text, rules).length > 0,
       preflightPrompt: async (text, context, signal) => {
-        if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) await host.prepare(record, context, signal);
+        if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) {
+          // This fixture typed a name and has no accepted completion receipt.
+          // Resolve its directory before selecting a record, as index does.
+          await search(signal);
+          await host.prepare(record, context, signal);
+        }
       },
       buildPreparedPrompt: async (_text, _ctx, _signal, prepared) => ({ customType: "context-broker", content: prepared.map(record => record.body).join("\n"), display: false }),
       isLoaded: () => loaded,
@@ -86,28 +99,35 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const [projection] = await emit("context_with_system", { messages: [{ role: "system", content: "base" }] });
       const messages = object(projection).messages;
       assert.ok(Array.isArray(messages));
-      return messages.filter(message => object(message).role === "system").flatMap(message => {
+      return messages.filter(message => object(message).role === "system" || object(message).customType === "context-broker-notion-catalog").flatMap(message => {
         const value = object(message), sections = value.sections;
         return [value.content, ...Object.values(sections && typeof sections === "object" ? sections : {})]
           .filter(text => typeof text === "string");
       }).join("\n\n");
     };
     const search = (signal?: AbortSignal) => tools.get(kind === "pi" ? "notion_list" : "skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
+    const deliver = async (content: MessageContent) => {
+      const message: AgentMessage = { role: "user", content };
+      await emit("message_start", { type: "message_start", message });
+      nativeEntries.push({ type: "message", id: "native-" + ++messageOrder, message });
+      return message;
+    };
     const begin = async (text: string) => {
       const [result] = await emit("input", { source: "rpc", text });
       const submitted = result && object(result).action === "transform" ? textOf(result) : text;
       await emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
       operation = new AbortController(); ctx.signal = operation.signal;
       await emit("agent_start");
-      return { result, submitted, project: () => emit("context", { messages: [{ role: "user", content: submitted }] }) };
+      const message = await deliver(submitted);
+      return { result, submitted, project: () => emit("context", { messages: [structuredClone(message)] }) };
     };
     return {
-      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin,
+      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin, deliver,
       stop: () => operation?.abort(),
       async end() { await emit("agent_end"); ctx.signal = undefined; operation = undefined; },
       entry: () => entry, aborts: () => aborts, host: () => host,
       setLoad: (next: typeof load) => { load = next; }, setLoaded: () => { loaded = true; },
-      move: () => { session = "replacement-session"; },
+      move: () => { session = "replacement-session"; nativeEntries = []; },
       resolve: (index = requests.length - 1, records = [record]) => requests[index]!.resolve({ records, failures: [] }),
       async close() { await emit("session_shutdown"); for (const pending of requests) pending.resolve({ records: [], failures: [] }); await installed; },
     };
@@ -136,6 +156,55 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.deepEqual(f.loads, []);
     } finally { await f.close(); }
   }
+  for (const mode of ["print", "json"] as const) {
+    const f = fixture();
+    f.ctx.mode = mode;
+    try {
+      await bounded(f.installed, "Print extension registration must not block on metadata");
+      const submitted = await bounded(f.begin("Describe the available default directory"), "Print input must reach its cancellable operation");
+      let finished = false;
+      const context = submitted.project().then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false, "The first print provider context must await its default metadata");
+      assert.deepEqual(f.loads, [], "Default cognition must not prepare any instruction body");
+      f.resolve(0, [{ ...record, defaultDiscovery: true }]);
+      await bounded(context, "Print context must continue after the original metadata request");
+      const prompt = await f.systemPrompt();
+      assert.match(prompt, /Startup fixture/);
+      assert.doesNotMatch(prompt, /status="pending"/);
+      assert.doesNotMatch(prompt, new RegExp(body));
+      assert.equal(f.requests.length, 1);
+      assert.deepEqual(f.loads, []);
+    } finally { await f.close(); }
+  }
+  for (const boundary of ["abort", "session-switch", "failure"] as const) {
+    const f = fixture();
+    f.ctx.mode = "print";
+    try {
+      await f.installed;
+      const submitted = await f.begin("Describe the current directory without loading bodies");
+      let finished = false;
+      const context = submitted.project().then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false);
+      if (boundary === "failure") {
+        f.requests[0]!.reject(new SourceError("ACCESS_DENIED", "fixture"));
+        await bounded(context, "A failed default directory must not hang print mode");
+        assert.match(await f.systemPrompt(), /status="unavailable"/);
+        assert.equal(f.aborts(), 0, "An unselected unavailable source does not cancel an ordinary task");
+      } else if (boundary === "abort") {
+        f.stop();
+        await bounded(context, "Print cancellation must not wait for directory I/O");
+      } else {
+        await f.emit("session_before_switch");
+        f.move();
+        const retired = await bounded(context, "The old print operation must settle at session replacement without an extension error");
+        assert.ok(!JSON.stringify(retired).includes(body));
+        assert.equal(f.aborts(), 0, "The replaced operation cannot abort the new session");
+      }
+      assert.deepEqual(f.loads, []);
+    } finally { await f.close(); }
+  }
   for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
     const f = fixture();
     try {
@@ -146,7 +215,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await turn();
       assert.equal(finished, false, "Explicit acquisition waits inside the cancellable context boundary");
       assert.deepEqual(f.loads, []);
-      assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }], "A quick second Enter cannot acquire a second submission");
+      const images = [{ type: "image" as const, mimeType: "image/png", data: "queued-image" }];
+      const queued = await f.emit("input", { source: "rpc", text, images, streamingBehavior: "followUp" });
+      assert.deepEqual(queued, text.startsWith("/skill:") ? [{ action: "transform", text: "\n" + text, images }] : [{ action: "continue" }],
+        "A second submission and its images remain owned by Pi's native queue");
       f.resolve();
       const [projection] = await bounded(context, "Selected context must finish after metadata");
       assert.equal(f.loads.length, 1);
@@ -158,6 +230,14 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.equal(original, text);
         assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
       });
+      const queuedContent = [{ type: "text", text: submitted }, ...images];
+      const queuedMessage = await f.deliver(queuedContent);
+      const [queuedContext] = await f.emit("context", { messages: [structuredClone(queuedMessage)] });
+      assert.equal(f.loads.length, 2, "A queued selection is prepared when its message reaches context, without another input hook");
+      const queuedMessages = object(queuedContext).messages;
+      assert.ok(Array.isArray(queuedMessages));
+      assert.deepEqual(queuedMessages.find(message => object(message).role === "user")?.content, queuedContent);
+      assert.equal(f.aborts(), 0);
       await f.end();
       f.setLoaded();
       const refreshing = f.host().refresh(f.ctx);
@@ -165,12 +245,12 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await bounded(f.emit("before_agent_start", { prompt: "continue with the active rules", systemPrompt: "base" }), "Active ordinary provider setup stays nonblocking");
       const messages = [{ role: "user" as const, content: body }];
       assert.deepEqual(await f.emit("context", { messages }), [{ messages }], "Ordinary input preserves already active conversation bodies");
-      assert.equal(f.loads.length, 1);
+      assert.equal(f.loads.length, 2);
       f.resolve();
       await refreshing;
     } finally { await f.close(); }
   }
-  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED"]) {
+  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED", "CURRENT_SOURCE_NOT_READY"]) {
     const f = fixture();
     try {
       await f.installed;
@@ -182,15 +262,20 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.match(await bounded(f.systemPrompt(), "Failed discovery must not block final system projection"), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
         const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
-        await assert.rejects(accepted.project(), new RegExp(code));
-        assert.equal(f.ctx.signal?.aborted, true, "An accurate acquisition failure must abort before provider dispatch");
+        const projection = await accepted.project();
+        assert.match(JSON.stringify(projection), new RegExp(code));
+        assert.match(JSON.stringify(projection), /context-broker-preparation-warning/);
+        assert.ok(JSON.stringify(projection).includes(accepted.submitted.replaceAll("\n", "\\n")));
+        assert.equal(f.ctx.signal?.aborted, false, "An acquisition failure must not cancel the user's turn");
+        assert.ok(f.notices.some(notice => notice.includes(code)));
+        assert.ok(!JSON.stringify(projection).includes(body));
         await f.end();
       }
       const [read] = await f.emit("tool_call", { toolName: "read", input: { path: record.ref } });
       assert.equal(object(read).block, true);
       assert.match(String(object(read).reason), new RegExp(code));
       assert.deepEqual(f.loads, []);
-      assert.equal(f.aborts(), 2, "Both failed selected operations were stopped at context");
+      assert.equal(f.aborts(), 0, "Both failed selections continue with warnings");
     } finally { await f.close(); }
   }
   {
@@ -204,7 +289,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
-      f.resolve(1, [{ ...record, id: "22222222-2222-4222-8222-222222222222", ref: "skill://22222222-2222-4222-8222-222222222222/SKILL.md" }]);
+      const replacement = "skill://replacement?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
+      f.resolve(1, [{ ...record, id: replacement, ref: nativeFileRef(replacement, "SKILL.md") }]);
       await refreshing;
       await context;
       assert.match(accepted.submitted, /accepted identity/);
@@ -248,7 +334,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       const settled = boundary === "cancel"
         ? context.then(result => { assert.deepEqual(result, [undefined], "An already aborted Pi operation must not produce an extension error"); })
-        : assert.rejects(context, /cancelled/i);
+        : context.then(result => { assert.ok(!JSON.stringify(result).includes(body), "A retired session cannot publish its late source body"); });
       await turn();
       if (boundary === "cancel") { f.stop(); assert.equal(f.ctx.signal?.aborted, true); }
       else { f.move(); await f.emit(boundary); }
@@ -298,8 +384,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.deepEqual(object(search.details).failures, [{ source: "fixture", code: "ACCESS_DENIED" }]);
       assert.deepEqual(await f.emit("input", { source: "rpc", text: "ordinary with a failed source" }), [{ action: "continue" }]);
       const accepted = await f.begin("/skill:fixture-startup forbidden");
-      await assert.rejects(accepted.project(), /ACCESS_DENIED/);
-      assert.equal(f.ctx.signal?.aborted, true);
+      const projection = await accepted.project();
+      assert.match(JSON.stringify(projection), /ACCESS_DENIED/);
+      assert.equal(f.ctx.signal?.aborted, false);
       assert.deepEqual(f.loads, [], "A known candidate cannot bypass current source permission failure");
     } finally { await f.close(); }
   }

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { nativeResourcePath, parseNativeReference, type ExactNativeReference } from "./native-reference";
+import { nativeResourcePath, nativeFileBinding, parseNativeReference, formatNativeReference, type ExactNativeReference } from "./native-reference";
 import { sharedSkillId } from "./shared-skill-identity";
 import type { PreparationBinding } from "./prepare-protocol";
 import type { ContentLocator, ContentRecord, SessionEntry, SkillRecord } from "./types";
@@ -17,7 +17,7 @@ export type ShortRefIdentity = Readonly<{
 export type CandidateShortRefTarget = Readonly<{ kind: "candidate"; identity: ShortRefIdentity }>;
 export type SelectedShortRefTarget = Readonly<{
   kind: "selected"; identity: ShortRefIdentity; snapshot_id: string; version_id: string;
-  body_sha256: string; entrypoint: string; ref: string; file_id?: string;
+  body_sha256: string; entrypoint: string; ref: string;
 }>;
 export type ResourceShortRefTarget = Readonly<{
   kind: "resource"; owner: SessionShortRef; path: string; ref: string;
@@ -61,29 +61,17 @@ function path(value: unknown): string {
 function reference(value: unknown): ExactNativeReference {
   try { return parseNativeReference(text(value, 8192)); } catch { return fail(); }
 }
-function canonical(value: ExactNativeReference): string {
-  const query = new URLSearchParams();
-  if (value.snapshot !== undefined) query.set("snapshot", value.snapshot);
-  if (value.fileId !== undefined) query.set("file_id", value.fileId);
-  return "skill://" + encodeURIComponent(value.selector)
-    + (value.path ? "/" + value.path.split("/").map(encodeURIComponent).join("/") : "")
-    + (query.size ? "?" + query.toString() : "");
-}
+const canonical = formatNativeReference;
+
 function locator(value: unknown): RemoteLocator {
   if (!object(value)) fail();
   if (value.type === "local") fail("SHORT_REF_UNSUPPORTED");
-  if (!["shared_skill", "notion_page", "notion_subscription"].includes(String(value.type))) fail();
-  const common = ["type", "database_id", "data_source_id"];
-  const extra = value.type === "shared_skill" ? ["page_id", "library_id", "skill_id"]
-    : value.type === "notion_page" ? ["page_id"] : ["subscription_id", "target_database_id"];
-  fields(value, [...common, ...extra]);
-  for (const key of ["database_id", "data_source_id", ...(value.type === "notion_subscription" ? ["subscription_id", "target_database_id"] : ["page_id"])]) {
+  if (value.type !== "shared_skill") fail();
+  fields(value, ["type", "database_id", "data_source_id", "page_id", "library_id", "skill_id"]);
+  for (const key of ["database_id", "data_source_id", "page_id"]) {
     if (typeof value[key] !== "string" || !UUID.test(value[key])) fail();
   }
   const database_id = String(value.database_id), data_source_id = String(value.data_source_id);
-  if (value.type === "notion_page") return { type: "notion_page", database_id, data_source_id, page_id: String(value.page_id) };
-  if (value.type === "notion_subscription") return { type: "notion_subscription", database_id, data_source_id,
-    subscription_id: String(value.subscription_id), target_database_id: String(value.target_database_id) };
   const library_id = text(value.library_id), skill_id = text(value.skill_id);
   if (!sharedSkillId(library_id, skill_id)) fail();
   return { type: "shared_skill", database_id, data_source_id, page_id: String(value.page_id), library_id, skill_id };
@@ -94,25 +82,21 @@ function identity(value: unknown): ShortRefIdentity {
   if (value.source !== "notion" || typeof value.scope !== "string" || !HASH.test(value.scope)
     || !["skill", "router", "prompt"].includes(String(value.kind))) fail();
   const sourceLocator = locator(value.locator), ref = reference(value.ref);
-  const id = sourceLocator.type === "shared_skill" ? sharedSkillId(sourceLocator.library_id, sourceLocator.skill_id)!
-    : sourceLocator.type + ":" + (sourceLocator.type === "notion_page" ? sourceLocator.page_id : sourceLocator.subscription_id);
-  const selector = sourceLocator.type === "shared_skill" ? id : sourceLocator.type === "notion_page" ? sourceLocator.page_id : "upstream:" + sourceLocator.subscription_id;
-  if (value.id !== id || ref.selector !== selector || ref.path || ref.snapshot !== undefined || ref.fileId !== undefined
-    || sourceLocator.type === "notion_subscription" && value.kind !== "router") fail();
+  const id = sharedSkillId(sourceLocator.library_id, sourceLocator.skill_id)!;
+  if (value.id !== id || ref.selector !== id || ref.path || ref.snapshot !== undefined) fail();
   return Object.freeze({ source: "notion", scope: value.scope, id, kind: value.kind as ContentRecord["kind"],
     locator: Object.freeze(sourceLocator), ref: canonical(ref) });
 }
 function recordIdentity(record: ContentRecord, scope: string): ShortRefIdentity {
   const ref = reference(record.ref);
-  if (ref.path !== path(record.entrypoint) || ref.snapshot !== undefined || ref.fileId !== undefined) fail();
+  if (ref.path !== path(record.entrypoint) || ref.snapshot !== undefined) fail();
   return identity({ source: "notion", scope, id: record.id, kind: record.kind, locator: record.locator,
     ref: canonical({ selector: ref.selector, path: "" }) });
 }
 function selected(binding: PreparationBinding): SelectedShortRefTarget {
   return target({ kind: "selected", identity: recordIdentity(binding.record, binding.scope),
     snapshot_id: binding.snapshot_id, version_id: binding.version_id, body_sha256: binding.body_sha256,
-    entrypoint: binding.record.entrypoint, ref: binding.ref,
-    ...(reference(binding.ref).fileId === undefined ? {} : { file_id: reference(binding.ref).fileId }) }) as SelectedShortRefTarget;
+    entrypoint: binding.record.entrypoint, ref: binding.ref }) as SelectedShortRefTarget;
 }
 function target(value: unknown): SessionShortRefTarget {
   if (!object(value)) fail();
@@ -121,23 +105,21 @@ function target(value: unknown): SessionShortRefTarget {
     return Object.freeze({ kind: "candidate", identity: identity(value.identity) });
   }
   if (value.kind === "selected") {
-    fields(value, ["kind", "identity", "snapshot_id", "version_id", "body_sha256", "entrypoint", "ref"], ["file_id"]);
+    fields(value, ["kind", "identity", "snapshot_id", "version_id", "body_sha256", "entrypoint", "ref"]);
     const owner = identity(value.identity), ref = reference(value.ref), entrypoint = path(value.entrypoint);
     if (typeof value.snapshot_id !== "string" || !SNAPSHOT.test(value.snapshot_id)
       || typeof value.body_sha256 !== "string" || !HASH.test(value.body_sha256)
-      || ref.selector !== reference(owner.ref).selector || ref.snapshot !== value.snapshot_id || ref.path !== entrypoint
-      || ref.fileId !== value.file_id) fail();
+      || ref.selector !== reference(owner.ref).selector || ref.snapshot !== value.snapshot_id || ref.path !== entrypoint) fail();
     return Object.freeze({ kind: "selected", identity: owner, snapshot_id: value.snapshot_id, version_id: text(value.version_id),
-      body_sha256: value.body_sha256, entrypoint, ref: canonical(ref),
-      ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }) });
+      body_sha256: value.body_sha256, entrypoint, ref: canonical(ref) });
   }
   if (value.kind !== "resource") fail();
   fields(value, ["kind", "owner", "path", "ref", "bytes", "sha256"], ["file_id"]);
   const owner = shortRef(value.owner), resourcePath = path(value.path), ref = reference(value.ref);
-  if (!owner.startsWith("sr:S") || ref.path !== resourcePath || !ref.snapshot || ref.fileId !== value.file_id
+  if (!owner.startsWith("sr:S") || ref.path !== resourcePath || !ref.snapshot || value.file_id !== undefined && (typeof value.file_id !== "string" || !value.file_id || value.file_id.trim() !== value.file_id)
     || !Number.isSafeInteger(value.bytes) || Number(value.bytes) < 0 || typeof value.sha256 !== "string" || !HASH.test(value.sha256)) fail();
   return Object.freeze({ kind: "resource", owner, path: resourcePath, ref: canonical(ref), bytes: Number(value.bytes), sha256: value.sha256,
-    ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }) });
+    ...(value.file_id === undefined ? {} : { file_id: text(value.file_id, 256) }) });
 }
 function shortRef(value: unknown): SessionShortRef {
   if (typeof value !== "string" || !TOKEN.test(value)) fail();
@@ -147,7 +129,7 @@ function shortRef(value: unknown): SessionShortRef {
   return value as SessionShortRef;
 }
 function targetKey(value: SessionShortRefTarget): string {
-  if (value.kind === "resource") return JSON.stringify(["resource", value.owner, value.file_id ?? null, value.file_id === undefined ? value.path : null]);
+  if (value.kind === "resource") return JSON.stringify(["resource", value.owner, value.path]);
   return JSON.stringify([value.kind, value.identity, ...(value.kind === "selected" ? [value.snapshot_id] : [])]);
 }
 function selectedOwner(bindings: ReadonlyMap<SessionShortRef, SessionShortRefTarget>, ref: SessionShortRef): SelectedShortRefTarget {
@@ -158,8 +140,11 @@ function selectedOwner(bindings: ReadonlyMap<SessionShortRef, SessionShortRefTar
 function validateOwner(bindings: ReadonlyMap<SessionShortRef, SessionShortRefTarget>, value: SessionShortRefTarget): void {
   if (value.kind !== "resource") return;
   const owner = selectedOwner(bindings, value.owner), ref = reference(value.ref);
-  if (ref.selector !== reference(owner.ref).selector || ref.snapshot !== owner.snapshot_id || value.path === owner.entrypoint
-    || value.file_id !== undefined && value.file_id === owner.file_id) fail("SHORT_REF_OWNER_MISMATCH");
+  if (ref.selector !== reference(owner.ref).selector || ref.snapshot !== owner.snapshot_id || value.path === owner.entrypoint) fail("SHORT_REF_OWNER_MISMATCH");
+  if (value.file_id !== undefined) for (const previous of bindings.values()) {
+    if (previous.kind === "resource" && previous.owner === value.owner && previous.file_id === value.file_id
+      && previous.path !== value.path) fail("SHORT_REF_CONFLICT");
+  }
 }
 function add(bindings: Map<SessionShortRef, SessionShortRefTarget>, byTarget: Map<string, SessionShortRef>, value: unknown): SessionShortRefEvent {
   if (!object(value)) fail();
@@ -238,16 +223,15 @@ export function bindResource(state: SessionShortRefState, ownerRef: string, snap
   try { resourcePath = nativeResourcePath(requested, snapshot); } catch { return fail("SHORT_REF_OWNER_MISMATCH"); }
   const files = snapshot.entryManifest.files, matches = files.filter(file => file.path === resourcePath);
   if (matches.length !== 1) fail("SHORT_REF_OWNER_MISMATCH");
-  const file = matches[0]!, exact = reference(file.ref), binding = snapshot.fileBindings?.find(item => item.path === file.path);
+  const file = matches[0]!, exact = reference(file.ref), binding = nativeFileBinding(snapshot, file.path);
   if (exact.selector !== requested.selector || exact.snapshot !== owner.snapshot_id || exact.path !== path(file.path)
-    || exact.fileId !== binding?.file_id || requested.fileId !== exact.fileId
     || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || !HASH.test(file.sha256)) fail("SHORT_REF_OWNER_MISMATCH");
   if (resourcePath === owner.entrypoint) {
     if (file.sha256 !== owner.body_sha256 || canonical(exact) !== owner.ref) fail("SHORT_REF_OWNER_MISMATCH");
     return Object.freeze({ ref: ownerToken, state });
   }
   return bind(state, target({ kind: "resource", owner: ownerToken, path: file.path, ref: canonical(exact), bytes: file.bytes, sha256: file.sha256,
-    ...(exact.fileId === undefined ? {} : { file_id: exact.fileId }) }));
+    ...(binding === undefined ? {} : { file_id: binding.file_id }) }));
 }
 /** Resolution returns routing/pinning information only. The caller must reauthorize it. */
 export function resolveSessionShortRef(state: SessionShortRefState, input: string, expectedScope: string): ResolvedSessionShortRef {

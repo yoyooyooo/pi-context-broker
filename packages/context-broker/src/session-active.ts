@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { recordIdentity } from "./discovery-records";
 import { decodePreparationLock, isPreparationBinding, type PreparationGraphLock } from "./prepare-protocol";
-import { reduceSessionSelection, SESSION_GRAPH_ENTRY, sessionSelection, type SessionSelection, type SelectionMode } from "./session-graph";
+import { applyRootRelease, applySelectionGraphs, samePreparationBinding, SESSION_RELEASE_ENTRY, decodeRootRelease, sessionSelection, type SessionSelection, type SelectionMode, type ReleasedRoot } from "./session-graph";
 import { sourceBodyLoaded, sourceContentIdentity, sourceDeliveryLoaded } from "./session-source-snapshot";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "./types";
 
@@ -14,9 +14,9 @@ export type ActiveSource = {
 };
 type Activation = {
   version: 1; schema_version: 1; compiler_version: 1; activation_id: string;
-  mode: SelectionMode; graphs: PreparationGraphLock[]; sources: ActiveSource[];
+  mode: SelectionMode; graphs: PreparationGraphLock[]; sources: ActiveSource[]; selected_roots?: ReleasedRoot[];
 };
-export type ActiveSources = { sources: Map<string, ActiveSource>; selection: SessionSelection };
+export type ActiveSources = { sources: Map<string, ActiveSource>; history: Map<string, ActiveSource>; selection: SessionSelection };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const invalid = () => Object.assign(new Error("Invalid active Skill delivery receipt"), { code: "SOURCE_SESSION_ACTIVE_INVALID" });
@@ -46,58 +46,58 @@ function decode(value: unknown): Activation {
       const binding = metadata.preparationBinding;
       if (!isPreparationBinding(binding) || binding.scope !== metadata.sourceScope || binding.record.id !== metadata.id
         || binding.snapshot_id !== source.snapshotId || binding.body_sha256 !== source.bodySha256
-        || !graphs.some(graph => graph.bindings.some(value => value.scope === binding.scope && value.record.id === binding.record.id
-          && value.snapshot_id === binding.snapshot_id && value.body_sha256 === binding.body_sha256))) throw invalid();
+        || !graphs.some(graph => graph.bindings.some(value => samePreparationBinding(value, binding)))) throw invalid();
     }
     return { identity: source.identity, contentIdentity: source.contentIdentity, snapshotId: source.snapshotId,
       bodySha256: source.bodySha256, bytes: Number(source.bytes), record: metadata };
   });
   for (const graph of graphs) for (const binding of graph.bindings) {
-    if (!sources.some(source => source.record.sourceScope === binding.scope && source.record.id === binding.record.id
-      && source.snapshotId === binding.snapshot_id && source.bodySha256 === binding.body_sha256)) throw invalid();
+    if (!sources.some(source => source.record.preparationBinding && samePreparationBinding(source.record.preparationBinding, binding))) throw invalid();
   }
+  const selected_roots = value.selected_roots === undefined ? undefined
+    : decodeRootRelease({ version: 1, release_id: value.activation_id, roots: value.selected_roots }).roots;
+  if (selected_roots?.some(root => !graphs.some(graph => graph.scope === root.scope && graph.roots.includes(root.id)))) throw invalid();
   return { version: 1, schema_version: 1, compiler_version: 1, activation_id: value.activation_id,
-    mode: value.mode === "replace" ? "replace" : "extend", graphs, sources };
+    mode: value.mode === "replace" ? "replace" : "extend", graphs, sources, ...(selected_roots ? { selected_roots } : {}) };
 }
 
 export function reduceActiveSources(branch: readonly SessionEntry[]): ActiveSources {
-  const sources = new Map<string, ActiveSource>(), selections: SessionEntry[] = [];
+  const sources = new Map<string, ActiveSource>(), history = new Map<string, ActiveSource>();
+  let selection: SessionSelection = { scopes: new Map() };
+  const prune = () => {
+    for (const [identity, source] of sources) {
+      if (source.record.source !== "notion") continue;
+      const binding = source.record.sourceScope && selection.scopes.get(source.record.sourceScope)?.bindings.get(source.record.id!);
+      if (!binding || !source.record.preparationBinding || !samePreparationBinding(binding, source.record.preparationBinding)) sources.delete(identity);
+    }
+  };
   for (const entry of branch) {
+    if (entry.type === "custom" && entry.customType === SESSION_RELEASE_ENTRY) {
+      applyRootRelease(selection, decodeRootRelease(entry.data));
+      prune();
+      continue;
+    }
     if (entry.type !== "custom" || entry.customType !== SESSION_ACTIVE_ENTRY) continue;
     const activation = decode(entry.data);
-    if (activation.mode === "replace") {
-      const scopes = new Set(activation.graphs.map(graph => graph.scope));
-      for (const [identity, source] of sources) if (source.record.sourceScope && scopes.has(source.record.sourceScope)) sources.delete(identity);
+    selection = applySelectionGraphs(selection, { graphs: activation.graphs, mode: activation.mode,
+      selectionId: activation.activation_id, selectedRoots: activation.selected_roots });
+    for (const source of activation.sources) {
+      sources.set(source.contentIdentity, source);
+      history.set(JSON.stringify([source.contentIdentity, source.snapshotId, source.bodySha256]), source);
     }
-    for (const source of activation.sources) sources.set(source.contentIdentity, source);
-    if (activation.graphs.length) selections.push({ type: "custom", customType: SESSION_GRAPH_ENTRY,
-      data: { ...activation, selection_id: activation.activation_id } });
+    prune();
   }
-  return { sources, selection: reduceSessionSelection(selections) };
+  return { sources, history, selection };
 }
 export function activeSources(ctx: ExtensionContext): ActiveSources {
   return reduceActiveSources(ctx.sessionManager?.getBranch?.() ?? []);
 }
 
 export function activeSelection(ctx: ExtensionContext, pending: readonly { graphs: readonly { lock: PreparationGraphLock }[]; mode: SelectionMode }[] = []): SessionSelection {
-  const selection = activeSources(ctx).selection;
+  let selection = activeSources(ctx).selection;
   for (const transition of pending) {
-    const replaced = new Set<string>();
-    for (const value of transition.graphs) {
-      const graph = value.lock;
-      if (graph.purpose !== "use") continue;
-      let scope = selection.scopes.get(graph.scope);
-      if (!scope) {
-        scope = { scope: graph.scope, bindings: new Map(), retired: new Map(), graphs: [], selectionId: "pending-provider" };
-        selection.scopes.set(graph.scope, scope);
-      }
-      if (transition.mode === "replace" && !replaced.has(graph.scope)) {
-        for (const [id, binding] of scope.bindings) scope.retired.set(id, binding);
-        scope.bindings.clear(); scope.graphs = []; replaced.add(graph.scope);
-      }
-      for (const binding of graph.bindings) scope.bindings.set(binding.record.id, binding);
-      if (!scope.graphs.some(previous => previous.sha256 === graph.sha256)) scope.graphs.push(graph);
-    }
+    selection = applySelectionGraphs(selection, { graphs: transition.graphs.map(value => value.lock).filter(graph => graph.purpose === "use"),
+      mode: transition.mode, selectionId: "pending-provider" });
   }
   return selection;
 }
@@ -112,7 +112,8 @@ export function confirmActiveSources(api: ExtensionAPI, ctx: ExtensionContext, r
   const graphs = [...selected.scopes.values()].flatMap(scope => scope.graphs).filter(graph => graph.purpose === "use"
     && graph.bindings.every(binding => {
       const record = candidates.get(JSON.stringify([binding.scope, binding.record.id]));
-      return record?.snapshotId === binding.snapshot_id && hash(record.body!) === binding.body_sha256;
+      return record?.snapshotId === binding.snapshot_id && hash(record.body!) === binding.body_sha256
+        && !!record.preparationBinding && samePreparationBinding(record.preparationBinding, binding);
     }));
   const recordsForGraph = new Set(graphs.flatMap(graph => graph.bindings.map(binding => JSON.stringify([binding.scope, binding.record.id]))));
   const sources: ActiveSource[] = [...candidates].filter(([identity, record]) => record.source !== "notion" || recordsForGraph.has(identity)).map(([contentIdentity, record]) => {
@@ -121,15 +122,16 @@ export function confirmActiveSources(api: ExtensionAPI, ctx: ExtensionContext, r
     return { identity: recordIdentity(record), contentIdentity, snapshotId: record.snapshotId ?? "local_" + bodySha256,
       bodySha256, bytes: Buffer.byteLength(body!), record: metadata };
   });
+  const selected_roots = [...selected.scopes.values()].flatMap(scope => [...scope.roots]
+    .filter(id => graphs.some(graph => graph.scope === scope.scope && graph.roots.includes(id))).map(id => ({ scope: scope.scope, id })));
   if (!sources.length || sources.every(source => {
     const previous = active.sources.get(source.contentIdentity);
     return previous?.snapshotId === source.snapshotId && previous.bodySha256 === source.bodySha256;
-  })) return;
-  const mode = sources.some(source => {
-    const previous = active.sources.get(source.contentIdentity);
-    return source.record.source === "notion" && previous && (previous.snapshotId !== source.snapshotId || previous.bodySha256 !== source.bodySha256);
-  }) ? "replace" : "extend";
-  const data = decode({ version: 1, schema_version: 1, compiler_version: 1, activation_id: randomUUID(), mode, graphs, sources });
+  }) && selected_roots.every(root => active.selection.scopes.get(root.scope)?.roots.has(root.id))
+    && graphs.every(graph => active.selection.scopes.get(graph.scope)?.graphs.some(previous => previous.sha256 === graph.sha256))) return;
+  const mode: SelectionMode = graphs.length ? "replace" : "extend";
+  const data = decode({ version: 1, schema_version: 1, compiler_version: 1, activation_id: randomUUID(), mode, graphs, sources,
+    ...(selected_roots.length ? { selected_roots } : {}) });
   reduceActiveSources([...ctx.sessionManager.getBranch(), { type: "custom", customType: SESSION_ACTIVE_ENTRY, data }]);
   api.appendEntry(SESSION_ACTIVE_ENTRY, data);
 }
@@ -139,7 +141,7 @@ export function missingActiveSources(ctx: ExtensionContext, messages: AgentMessa
   return [...activeSources(ctx).sources.values()].filter(source => {
     const scope = source.record.sourceScope && effective.scopes.get(source.record.sourceScope);
     const selected = scope && scope.bindings.get(source.record.id!);
-    if (scope && (!selected || selected.snapshot_id !== source.snapshotId || selected.body_sha256 !== source.bodySha256)) return false;
+    if (scope && (!selected || !source.record.preparationBinding || !samePreparationBinding(selected, source.record.preparationBinding))) return false;
     return !sourceDeliveryLoaded(messages, source);
   });
 }

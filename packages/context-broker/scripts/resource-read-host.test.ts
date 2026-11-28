@@ -1,4 +1,6 @@
-import { expect, test } from "bun:test";
+import { nativeFileRef, nativeSkillId, withNativeSnapshot, bindNativeReference } from "../src/native-reference";
+import { expect, spyOn, test } from "bun:test";
+import { JsonSchema, Schema, SchemaRepresentation } from "effect";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,33 +10,46 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createSessionShortRefHost } from "../src/session-short-ref-host";
 import { parseNativeReference } from "../src/native-reference";
 import { sessionSourceSnapshot } from "../src/session-source-snapshot";
-import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBatch, type ResourceReadFile } from "../src/resource-read-types";
-import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord } from "../src/types";
+import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBudget, type ResourceReadBatch, type ResourceReadFile } from "../src/resource-read-types";
+import { consumptionEffects, noConsumptionWrites, type ConsumptionEffects } from "../src/consumption-effects";
+import { validateResourceReadProjection } from "../src/resource-read-projection";
+import { sourceMessageText, sourceDeliveryReceipt } from "../src/session-source-snapshot";
+import { persistSessionSelection, sessionSelection } from "../src/session-graph";
+import { confirmActiveSources, activeSources } from "../src/session-active";
+import type { PreparedHostGraph } from "../src/prepare-protocol";
+import { SourceError } from "../src/notion-source";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord, SourceFailure } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-async function fixture() {
+const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
+    : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+      .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
+async function fixture(options: { otherSource?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-resource-host-"));
-  const id = "shared_skill:batch:owner", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
-  const base = "skill://" + encodeURIComponent(id) + "/", ref = (path: string, file?: string) => base + path + "?snapshot=" + snapshot + (file ? "&file_id=" + file : "");
+  const id = "skill://owner?library=e1448f62-7e41-528b-9e42-e9b701cb7d98", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
+  const base = id, ref = (path: string) => nativeFileRef(base, String(path), String(snapshot));
   const content: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "Resource owner metadata", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: base + "SKILL.md", locator: { type: "shared_skill", library_id: "batch", skill_id: "owner",
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "e1448f62-7e41-528b-9e42-e9b701cb7d98", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const metadata: SkillRecord = { ...content, source: "notion", sourceId: "notion", sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false, defaultDiscovery: false };
   await mkdir(join(root, "metadata")); await writeFile(metadata.path, "Owner metadata only");
   const binary = Buffer.from([0, 255, 1, 254, 2, 253, 3]), output = join(root, "selected.bin"); await writeFile(output, binary);
   const files: ResourceReadFile[] = [
-    { requested_ref: ref("references/a.md", "a"), ref: ref("references/a.md", "a"), path: "references/a.md", file_id: "a", encoding: "utf8", content: "\ufeffUTF8 雪\r\n", bytes: Buffer.byteLength("\ufeffUTF8 雪\r\n"), sha256: hash("\ufeffUTF8 雪\r\n") },
-    { requested_ref: ref("references/b.md", "b"), ref: ref("references/b.md", "b"), path: "references/b.md", file_id: "b", encoding: "utf8", content: "", bytes: 0, sha256: hash("") },
-    { requested_ref: ref("assets/selected.bin", "binary"), ref: ref("assets/selected.bin", "binary"), path: "assets/selected.bin", file_id: "binary", encoding: "base64", content: binary.toString("base64"), bytes: binary.length, sha256: hash(binary), output },
+    { requested_ref: ref("references/a.md"), ref: ref("references/a.md"), path: "references/a.md", file_id: "a", encoding: "utf8", content: "\ufeffUTF8 雪\r\n", bytes: Buffer.byteLength("\ufeffUTF8 雪\r\n"), sha256: hash("\ufeffUTF8 雪\r\n") },
+    { requested_ref: ref("references/b.md"), ref: ref("references/b.md"), path: "references/b.md", file_id: "b", encoding: "utf8", content: "", bytes: 0, sha256: hash("") },
+    { requested_ref: ref("assets/selected.bin"), ref: ref("assets/selected.bin"), path: "assets/selected.bin", file_id: "binary", encoding: "base64", content: binary.toString("base64"), bytes: binary.length, sha256: hash(binary), output },
   ];
   const scalarOutput = join(root, "selected-text.md"); await writeFile(scalarOutput, files[0]!.content);
-  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash("unread main"), ref: ref("SKILL.md", "main") };
+  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash("unread main"), ref: ref("SKILL.md") };
   const manifestFiles = [{ path: "SKILL.md", bytes: 11, sha256: ownerBinding.body_sha256, ref: ownerBinding.ref }, ...files];
   const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: "SKILL.md", files: manifestFiles.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) };
-  const state = { id: "session-one", entries: [] as SessionEntry[], calls: [] as string[][], mainReads: 0, persisted: 0,
-    nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0,
-    transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | (() => Promise<void>), signal: undefined as AbortSignal | undefined };
+  const state = { id: "session-one", entries: [] as SessionEntry[], catalog: [metadata], lookupFailures: [] as SourceFailure[], lookupScope: true, calls: [] as string[][], mainReads: 0, persisted: 0,
+    resolutionCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0, readOnly: [] as Array<boolean | undefined>, budgets: [] as ResourceReadBudget[],
+    effects: undefined as ConsumptionEffects | undefined, failure: undefined as Error | undefined, contextFailure: undefined as Error | undefined,
+    transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>),
+    lookupWait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>), signal: undefined as AbortSignal | undefined };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
   const tools = new Map<string, { definition: PiReadDefinition; source: string }>();
   const native: PiReadDefinition = { name: "read", label: "read", description: "Native scalar reader", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] }, outputSchema: { type: "string" },
@@ -54,40 +69,59 @@ async function fixture() {
     getSessionId: () => state.id, getSessionFile: () => join(root, state.id + ".jsonl"), getBranch: () => state.entries,
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: [] }),
-    resolveNamedReference: async input => {
-      state.nameCalls.push(input);
-      const parsed = parseNativeReference(input);
-      if (![content.name, content.alias].includes(parsed.selector) || parsed.snapshot !== snapshot) throw new Error("Unexpected fixed name");
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }, ...(options.otherSource ? [{ id: "other-source", type: "notion" as const, prefetch: false }] : [])] },
+    getRecords: async () => ({ records: state.catalog, failures: [], lists: [{ sourceId: "notion", scope, policy: "default", exhaustive: true }] }),
+    lookupReference: async (_ctx, signal) => {
+      await state.lookupWait?.(signal);
+      return { records: state.catalog, failures: state.lookupFailures,
+        lists: state.lookupScope ? [{ sourceId: "notion", scope, policy: "refresh", exhaustive: true }] : [] };
+    },
+    resolveSkillReference: async input => {
+      state.resolutionCalls.push(input);
+      const parsed = bindNativeReference(parseNativeReference(input), "e1448f62-7e41-528b-9e42-e9b701cb7d98");
+      if (parsed.selector !== id || parsed.snapshot !== snapshot) throw new SourceError("SKILL_NOT_FOUND", "notion");
       return { record: metadata, ref: ref(parsed.path) };
     },
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
     prepareGraph: async () => { state.mainReads++; throw new Error("Resource reads cannot prepare a graph"); },
     persistGraphs: () => { state.persisted++; },
-    readFixedResource: async (_record, input) => {
+    restoreActive: async messages => {
+      if (state.contextFailure) throw state.contextFailure;
+      return { messages, restored: [], notices: [] };
+    },
+    sessionGraph: sessionSelection,
+    readFixedResource: async (_record, input, _ctx, _signal, policy) => {
       state.fixedCalls.push(input);
+      state.readOnly.push(policy?.readOnly);
       const selected = files[0]!;
       if (parseNativeReference(input).path !== selected.path) throw new Error("Unexpected scalar resource");
       return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
         file: { requested_ref: input, ref: selected.ref, path: selected.path, file_id: selected.file_id, bytes: selected.bytes, sha256: selected.sha256, output: scalarOutput } };
     },
-    readResources: async (_record, refs, _ctx, signal) => {
-      state.calls.push([...refs]); state.signal = signal;
-      await state.wait?.();
+    readResources: async (_record, refs, budget, _ctx, signal, policy) => {
+      state.calls.push([...refs]); state.signal = signal; state.budgets.push(budget);
+      state.readOnly.push(policy?.readOnly);
+      await state.wait?.(signal);
+      if (state.effects) policy?.observeEffects?.(state.effects);
+      if (state.failure) throw state.failure;
       const seen = new Set<string>();
       const selected = refs.map(requested_ref => {
         const parsed = parseNativeReference(requested_ref);
-        if (parsed.fileId === "main" || parsed.fileId === undefined && parsed.path === "SKILL.md") throw Object.assign(new Error("Main excluded"), { code: "RESOURCE_MAIN_NOT_ALLOWED" });
-        const file = files.find(file => parsed.fileId === undefined ? file.path === parsed.path : file.file_id === parsed.fileId);
-        if (!file) throw new Error("Unexpected fixture resource");
+        if (parsed.path === "SKILL.md") throw Object.assign(new Error("Main excluded"), { code: "RESOURCE_MAIN_NOT_ALLOWED" });
+        const file = files.find(file => file.path === parsed.path);
+        if (!file) throw new SourceError("FILE_NOT_FOUND", "notion");
         if (seen.has(file.path)) throw Object.assign(new Error("Duplicate canonical selection"), { code: "RESOURCE_SELECTION_CONFLICT" });
         seen.add(file.path); return { ...file, requested_ref };
       });
-      return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, manifest,
-        manifest_sha256: hash(JSON.stringify(manifest)), files: selected, budget: DEFAULT_RESOURCE_READ_BUDGET, machine: { status: "ready", manifest, files: selected } });
+      return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, manifest, effects: consumptionEffects(state.effects),
+        manifest_sha256: hash(JSON.stringify(manifest)), files: selected, budget, machine: { status: "ready", manifest, files: selected } });
     },
   }, createPiHostAdapter(api, async () => () => native));
-  const emit = async (name: string) => { for (const handler of events.get(name) ?? []) await handler({ type: name } as never, ctx); };
+  const emit = async (name: string, value: unknown = { type: name }) => {
+    const results: unknown[] = [];
+    for (const handler of events.get(name) ?? []) results.push(await handler(value as never, ctx));
+    return results;
+  };
   await emit("session_start"); await host.refresh(ctx);
   const selected: SkillRecord = { ...metadata, snapshotId: snapshot, versionId: version, preparationBinding: ownerBinding,
     fileBindings: [{ path: "SKILL.md", file_id: "main", page_id: "00000000-0000-4000-8000-000000000001" },
@@ -95,7 +129,35 @@ async function fixture() {
     entryManifest: { version: 1, root: join(root, "unmaterialized-entry"), receipt: join(root, "manifest"), manifest_id: hash("fixture"), files: manifestFiles,
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
-  return { root, ref, files, metadata, selected, ctx, state, emit, short,
+  const confirmTask = async () => {
+    const body = "Complete independent task root instructions.\n", taskId = "skill://task?library=e1448f62-7e41-528b-9e42-e9b701cb7d98";
+    const taskMetadata: ContentRecord = { ...content, id: taskId, name: "Task", alias: "task", ref: nativeFileRef(taskId, "SKILL.md"),
+      locator: { ...content.locator, skill_id: "task", page_id: "00000000-0000-4000-8000-000000000099" } };
+    const taskSnapshot = "s_" + hash("task snapshot");
+    const taskBinding = { record: taskMetadata, scope, snapshot_id: taskSnapshot, version_id: hash(body), body_sha256: hash(body),
+      ref: withNativeSnapshot(taskMetadata.ref, taskSnapshot) };
+    const task: SkillRecord = { ...metadata, ...taskMetadata, path: join(root, "task/SKILL.md"), body,
+      snapshotId: taskSnapshot, versionId: hash(body), preparationBinding: taskBinding };
+    const required = { ...selected, body: "unread main" };
+    const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose: "use" as const, scope, roots: [taskId],
+      required: [{ from: taskId, to: id, ref: ownerBinding.ref }], bindings: [taskBinding, ownerBinding] };
+    const graph: PreparedHostGraph = { purpose: "use", sourceId: "notion", scope, roots: [taskId], records: [task, required],
+      bindings: vector.bindings, lock: { ...vector, sha256: hash(canonical(vector)) },
+      budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
+      usage: { prepared_nodes: 2, instruction_bytes: Buffer.byteLength(body) + 11, context_bytes: Buffer.byteLength(body) + 11, max_depth: 1 } };
+    state.catalog = [task, metadata];
+    await host.refresh(ctx);
+    // Controlled producer history uses the real selection and confirmation
+    // writers; complete body receipts and graph locks remain independently checked.
+    persistSessionSelection(api, ctx, [graph], "extend");
+    confirmActiveSources(api, ctx, graph.records, graph.records.map(record => ({ role: "custom", customType: "context-broker",
+      content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body!)] } })));
+    return { task, required };
+  };
+  return { root, ref, files, metadata, selected, ctx, state, emit, short, host, confirmTask,
+    control: (input: Record<string, unknown>) => tools.get("notion_ctl")!.definition.execute("control-call", input, undefined, undefined, ctx),
+    use: (input: Record<string, unknown>) => tools.get("notion_use")!.definition.execute("use-call", input, undefined, undefined, ctx),
+    definition: () => tools.get("read")!.definition,
     result: async (result: Record<string, unknown>) => {
       const updates: unknown[] = [];
       for (const handler of events.get("tool_result") ?? []) updates.push(await handler({ toolName: "read", toolCallId: "batch-call", ...result } as never, ctx));
@@ -103,6 +165,143 @@ async function fixture() {
     },
     read: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("read")!.definition.execute("batch-call", input, signal, undefined, ctx) };
 }
+
+test("a complete resource batch recovers a failed Pi context while a partial batch cannot", async () => {
+  const f = await fixture(), operation = new AbortController();
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "Inspect the selected resources." }] };
+  const old: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "old-source", content: [{ type: "text", text: "Retired source instructions" }] };
+  f.ctx.signal = operation.signal;
+  const context = async (messages: AgentMessage[]) => {
+    const [result] = await f.emit("context", { messages });
+    if (!result || typeof result !== "object" || !("messages" in result) || !Array.isArray(result.messages)) throw new Error("Expected context messages");
+    return result.messages as AgentMessage[];
+  };
+  try {
+    await f.emit("input", { source: "rpc", text: sourceMessageText(user.content) });
+    await f.emit("before_agent_start", { prompt: sourceMessageText(user.content), systemPrompt: "base" });
+    await f.emit("agent_start");
+    f.state.contextFailure = Object.assign(new Error("Skill preparation timed out"), { code: "SOURCE_PREPARATION_TIMEOUT" });
+    expect(JSON.stringify(await context([user, old]))).toContain("SOURCE_PREPARATION_TIMEOUT");
+    f.state.contextFailure = undefined;
+    f.state.transform = batch => ({ ...batch, files: batch.files.map(file => file.encoding === "utf8" ? { ...file, content: file.content.slice(0, 1) } : file) });
+    await expect(f.read({ paths: [f.files[0]!.ref] })).rejects.toMatchObject({ code: "SOURCE_RESOURCE_PROJECTION_INVALID" });
+    expect(JSON.stringify(await context([user, old]))).toContain("SOURCE_PREPARATION_TIMEOUT");
+    f.state.transform = batch => batch;
+    const result = await f.read({ paths: f.files.map(file => file.ref) });
+    const fresh: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result };
+    const recovered = await context([user, old, fresh]);
+    expect(recovered.find(message => message.toolCallId === "batch-call")).toEqual(fresh);
+    expect(JSON.stringify(recovered)).not.toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(recovered)).not.toContain("Retired source instructions");
+    expect(recovered.every(message => message.role !== "toolResult" || Array.isArray(message.content))).toBe(true);
+    expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+    expect(operation.signal.aborted).toBe(false);
+  } finally { await f.emit("agent_end"); await f.emit("session_shutdown"); }
+});
+
+test("a requested batch time budget is per call and preserves original count, bytes and task pins", async () => {
+  const f = await fixture(); await f.confirmTask();
+  const selection = structuredClone(sessionSelection(f.ctx)), active = structuredClone(activeSources(f.ctx));
+  const paths = f.files.slice(0, 2).map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const result = await f.read({ paths, budget: { timeBudgetMs: 120000 } });
+  expect(result.structuredContent).toMatchObject({ status: "ready", files: [{ content: f.files[0]!.content }, { content: "" }] });
+  expect(f.state.budgets).toEqual([{ maxFiles: 16, maxBytes: 1048576, timeBudgetMs: 120000 }]);
+  await f.read({ paths });
+  expect(f.state.budgets[1]).toEqual(DEFAULT_RESOURCE_READ_BUDGET);
+  expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0); expect(f.state.scalarReads).toBe(0);
+  expect(sessionSelection(f.ctx)).toEqual(selection); expect(activeSources(f.ctx)).toEqual(active);
+});
+
+test("one batch deadline includes metadata lookup and acquisition and timeout leaves the same session usable", async () => {
+  for (const phase of ["lookup", "acquisition"] as const) {
+    const f = await fixture(); await f.confirmTask();
+    if (phase === "lookup") { f.state.catalog = []; await f.host.refresh(f.ctx); }
+    const selection = structuredClone(sessionSelection(f.ctx)), entered = Promise.withResolvers<void>();
+    const durations: number[] = [], nativeTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+      if (milliseconds === 120000) { durations.push(milliseconds); expire = () => callback(...args); }
+      return nativeTimeout(callback, milliseconds, ...args);
+    });
+    const wait = async (signal?: AbortSignal) => {
+      if (!signal) throw new Error("Batch I/O requires the operation signal");
+      entered.resolve();
+      return new Promise<void>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    };
+    if (phase === "lookup") f.state.lookupWait = wait; else f.state.wait = wait;
+    try {
+      const outcome = f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 120000 } })
+        .then(result => ({ result }), error => ({ error }));
+      await entered.promise;
+      expect(durations).toEqual([120000]);
+      expire?.();
+      expect(await outcome).toMatchObject({ error: { code: "RESOURCE_TIME_BUDGET" } });
+      expect(f.state.calls).toHaveLength(phase === "lookup" ? 0 : 1);
+      if (phase === "acquisition") {
+        expect(f.state.signal?.aborted).toBe(true);
+        expect(f.state.budgets).toEqual([{ maxFiles: 16, maxBytes: 1048576, timeBudgetMs: 120000 }]);
+      }
+      expect(sessionSelection(f.ctx)).toEqual(selection);
+    } finally { expire?.(); timeout.mockRestore(); f.state.lookupWait = undefined; f.state.wait = undefined; }
+    expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
+    expect(sessionSelection(f.ctx)).toEqual(selection);
+  }
+});
+
+test("explicit batch time allowance cannot turn a cancelled late result into delivery", async () => {
+  const f = await fixture(); await f.confirmTask();
+  const selection = structuredClone(sessionSelection(f.ctx)), entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  f.state.wait = async () => { entered.resolve(); await release.promise; };
+  const controller = new AbortController();
+  const outcome = f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 120000 } }, controller.signal)
+    .then(result => ({ result }), error => ({ error }));
+  await entered.promise; controller.abort(); release.resolve();
+  expect(await outcome).toMatchObject({ error: { code: "SOURCE_CANCELLED" } });
+  expect(f.state.signal?.aborted).toBe(true); expect(sessionSelection(f.ctx)).toEqual(selection);
+  f.state.wait = undefined;
+  expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
+  expect(f.state.budgets[1]).toEqual(DEFAULT_RESOURCE_READ_BUDGET);
+});
+
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker resource batch settles on ${stop} while the producer ignores its signal`, async () => {
+  const f = await fixture(), controller = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const original = JSON.stringify(f.state.entries);
+  f.state.effects = noConsumptionWrites();
+  f.state.wait = async () => { entered.resolve(); await release.promise; };
+  const pending = f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 15 } }, controller.signal)
+    .then(value => ({ value }), error => ({ error }));
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await entered.promise;
+    if (stop === "abort") controller.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = setTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Batch wait must finish before the producer is released");
+    expect(result.error).toMatchObject({ code: stop === "abort" ? "SOURCE_CANCELLED" : "RESOURCE_TIME_BUDGET" });
+    expect(f.state.signal?.aborted).toBe(true); expect(controller.signal.aborted).toBe(stop === "abort");
+    expect(f.state.persisted).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.mainReads).toBe(0);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(f.state.persisted).toBe(0); expect(JSON.stringify(f.state.entries)).toBe(original);
+    expect(await f.result({ content: [{ type: "text", text: f.files[0]!.content }], isError: false })).toEqual([undefined]);
+    f.state.wait = undefined;
+    expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
+  } finally { if (watchdog) clearTimeout(watchdog); release.resolve(); await pending; await f.emit("session_shutdown"); }
+});
+
+test("a resource result must retain the complete requested budget before provider projection", async () => {
+  for (const changed of [{ timeBudgetMs: 30000 }, { maxFiles: 17 }, { maxBytes: 1048577 }]) {
+    const f = await fixture(); await f.confirmTask();
+    const selection = structuredClone(sessionSelection(f.ctx));
+    f.state.transform = batch => ({ ...batch, budget: { ...batch.budget, ...changed } });
+    await expect(f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 120000 } })).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
+    expect(f.state.calls).toHaveLength(1); expect(sessionSelection(f.ctx)).toEqual(selection);
+  }
+});
 
 test("one resource batch delivers exact selected text and binary metadata without preparing or selecting the owner body", async () => {
   const f = await fixture(), result = await f.read({ paths: f.files.map(file => file.ref) });
@@ -112,33 +311,93 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(model.files[2]).toMatchObject({ kind: "binary", output: f.files[2]!.encoding === "base64" ? f.files[2]!.output : "" });
   expect(JSON.stringify(result.content)).not.toContain(f.files[2]!.content);
   expect(f.state.calls).toHaveLength(1); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
-  expect(f.state.scalarReads).toBe(0); expect(f.state.nameCalls).toHaveLength(0);
+  expect(f.state.scalarReads).toBe(0); expect(f.state.resolutionCalls).toHaveLength(0);
   expect(f.metadata.body).toBeUndefined(); expect(f.metadata.entryManifest).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
   expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false }, contextBrokerResourceSource: { source_id: "notion" } });
+  expect(result.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
 });
 
-test("SC25 scalar fixed-name resources deliver the exact file without preparing the main entry", async () => {
-  const f = await fixture(), input = `skill://Owner/references/a.md?${f.files[0]!.ref.split("?")[1]!.split("&")[0]}`;
+test("every Pi batch forbids writes and preserves complete issued-resource receipts", async () => {
+  const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const entries = f.state.entries.length, effects = noConsumptionWrites();
+  f.state.effects = effects;
+  const result = await f.read({ paths }), text = sourceMessageText(result.content);
+  expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
+  const proof = validateResourceReadProjection(text, (result.details as { contextBrokerResource: unknown }).contextBrokerResource);
+  expect(proof).toBeDefined();
+  expect(proof?.files.map(file => file.model_ref)).toEqual(paths);
+  expect(proof?.files.map(file => file.sha256)).toEqual(f.files.map(file => file.sha256));
+  expect(proof?.files.map(file => file.delivered_complete_text)).toEqual([true, true, false]);
+  expect(JSON.parse(text)).toMatchObject({ effects, files: [{ content: f.files[0]!.content }, { content: "" }, { kind: "binary" }] });
+  expect(result.details).toHaveProperty("effects", effects);
+  expect(result.details).toHaveProperty("contextBrokerReadDisplay", { version: 1, source: "notion", kind: "file",
+    name: "Owner", sourceId: "notion", scope: f.metadata.sourceScope,
+    files: f.files.map((file, index) => ({ ref: paths[index], path: file.path })) });
+  f.metadata.name = "Renamed catalog owner";
+  expect(JSON.parse(JSON.stringify(result)).details.contextBrokerReadDisplay.name).toBe("Owner");
+  expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
+  expect(f.state.entries).toHaveLength(entries);
+  expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+});
+
+test("ready batch effects satisfy the registered Pi output schema", async () => {
+  const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const registered = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(f.definition().outputSchema);
+  const decode = Schema.decodeUnknownSync(SchemaRepresentation.fromJsonSchemaDocument(
+    JsonSchema.fromSchemaDraft2020_12(registered)), { onExcessProperty: "error" });
+  const ordinary = await f.read({ paths });
+  expect(ordinary.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
+  expect(decode(ordinary.structuredContent)).toEqual(ordinary.structuredContent);
+  f.state.effects = noConsumptionWrites();
+  const strict = await f.read({ paths });
+  expect(strict.structuredContent).toHaveProperty("effects.remote_writes", "none");
+  expect(decode(strict.structuredContent)).toEqual(strict.structuredContent);
+  expect(decode("native scalar output")).toBe("native scalar output");
+  const model = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(strict.structuredContent);
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), version: "1" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), retention: [] } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), remote_writes: "retained" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), author_content: "unknown" } })).toThrow();
+  const unknownUnchanged = { ...model, effects: { version: 1, remote_writes: "unknown", author_content: "unchanged" } };
+  expect(decode(unknownUnchanged)).toEqual(unknownUnchanged);
+  expect(() => decode({ ...model, unexpected: true })).toThrow();
+});
+
+test("a producer requiring writes fails an ordinary batch without a body delivery", async () => {
+  const f = await fixture(), effects = noConsumptionWrites();
+  const original = Object.freeze(Object.assign(new Error("Strict source refused a semantic write"), { code: "NOTION_READ_ONLY", details: { effects } }));
+  f.state.failure = original;
+  await expect(f.read({ paths: f.files.map(file => file.ref) })).rejects.toMatchObject({
+    code: "NOTION_READ_ONLY", details: { effects }, cause: original,
+  });
+  expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toHaveLength(1);
+  expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(original.message).toBe("Strict source refused a semantic write");
+});
+
+test("SC25 scalar stable-ID resources bind the entry Library without preparing the main", async () => {
+  const f = await fixture(), input = `skill://owner/references/a.md?snapshot=${f.selected.snapshotId}`;
   const result = await f.read({ path: input });
   expect(result.content).toEqual([{ type: "text", text: f.files[0]!.content }]);
   expect(await f.result(result)).toEqual(expect.arrayContaining([expect.objectContaining({ details: expect.objectContaining({
     contextBrokerResource: expect.objectContaining({ delivered_complete_text: true, loaded: false, ref: f.files[0]!.ref }),
   }) })]));
-  expect(f.state.nameCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.resolutionCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.readOnly).toEqual([true]);
   expect(f.state.scalarReads).toBe(1); expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
 });
 
-test("SC25 fixed-name resource batches preserve one canonical owner and exclude unfixed names before lookup", async () => {
+test("SC25 contextual resource batches preserve exact owner and reject display names", async () => {
   const f = await fixture(), snapshot = parseNativeReference(f.files[0]!.ref).snapshot;
-  const refs = [`skill://Owner/references/a.md?snapshot=${snapshot}`, `skill://owner/references/b.md?snapshot=${snapshot}`];
+  const refs = [`skill://owner/references/a.md?snapshot=${snapshot}`, `skill://owner/references/b.md?snapshot=${snapshot}`];
   const result = await f.read({ paths: refs });
   expect(result.structuredContent).toHaveProperty("files.0.content", f.files[0]!.content);
   expect(result.structuredContent).toHaveProperty("files.1.content", "");
   expect(f.state.calls).toEqual([[f.ref("references/a.md"), f.ref("references/b.md")]]);
-  expect(f.state.nameCalls).toEqual(refs); expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(f.state.resolutionCalls).toEqual(refs); expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
   await expect(f.read({ paths: ["skill://Owner/references/a.md"] })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
-  expect(f.state.nameCalls).toEqual(refs); expect(f.state.calls).toHaveLength(1);
+  expect(f.state.resolutionCalls).toEqual(refs); expect(f.state.calls).toHaveLength(1);
 });
 
 test("batch admission rejects invalid modes and identities before any SDK operation", async () => {
@@ -146,23 +405,25 @@ test("batch admission rejects invalid modes and identities before any SDK operat
   const selected = f.short.selected(f.ctx, f.selected);
   for (const input of [
     { paths: [] }, { path: first, paths: [first] }, { paths: [first], offset: 1 }, { paths: ["/local/file"] },
+    { paths: [first], readOnly: "true" }, { paths: [first], readOnly: null },
+    { paths: [first], readOnly: true }, { paths: [first], readOnly: false }, { paths: [first], readOnly: undefined },
     { paths: [first.split("?")[0]!] }, { paths: [selected] }, { paths: [first, first] },
-    { paths: [first, first.replace("references/a.md", "old.md")] },
     { paths: [first, f.files[1]!.ref.replace(/snapshot=s_[a-f0-9]+/, "snapshot=s_" + hash("other"))] },
-    { paths: [first, f.files[1]!.ref.replace("shared_skill%3Abatch%3Aowner", "shared_skill%3Abatch%3Aother")] },
+    { paths: [first, f.files[1]!.ref.replace("skill://owner/", "skill://other/")] },
     { paths: [f.ref("SKILL.md")] }, { paths: Array.from({ length: 17 }, (_, index) => f.ref("resources/" + index + ".md")) },
   ]) await expect(f.read(input)).rejects.toThrow();
   expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0);
 });
 
-test("stable File ID resolves old path hints and canonical aliases are rejected after selection", async () => {
+test("fixed resource paths never repair old spellings and reject duplicate selection", async () => {
   const f = await fixture();
-  const sameHint = await f.read({ paths: [f.ref("old.md", "a"), f.ref("old.md", "b")] });
-  expect((sameHint.structuredContent as { files: Array<{ path: string }> }).files.map(file => file.path)).toEqual(["references/a.md", "references/b.md"]);
-  expect(await f.read({ paths: [f.ref("SKILL.md", "a")] })).toHaveProperty("structuredContent.files.0.path", "references/a.md");
+  await expect(f.read({ paths: [f.ref("old.md")] })).rejects.toMatchObject({ code: "FILE_NOT_FOUND" });
+  await expect(f.read({ paths: [f.ref("old.md") + "&file_id=a"] })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
+  const exact = await f.read({ paths: [f.ref("references/a.md"), f.ref("references/b.md")] });
+  expect((exact.structuredContent as { files: Array<{ path: string }> }).files.map(file => file.path)).toEqual(["references/a.md", "references/b.md"]);
   expect(await f.read({ paths: [f.ref("references/a.md")] })).toHaveProperty("structuredContent.files.0.ref", f.files[0]!.ref);
-  await expect(f.read({ paths: [f.ref("old.md", "a"), f.ref("references/a.md")] })).rejects.toMatchObject({ code: "RESOURCE_SELECTION_CONFLICT" });
-  await expect(f.read({ paths: [f.ref("old.md", "main")] })).rejects.toMatchObject({ code: "RESOURCE_MAIN_NOT_ALLOWED" });
+  await expect(f.read({ paths: [f.ref("references/a.md"), f.ref("references/a.md")] })).rejects.toThrow();
+  await expect(f.read({ paths: [f.ref("SKILL.md")] })).rejects.toMatchObject({ code: "RESOURCE_MAIN_NOT_ALLOWED" });
   expect(f.state.mainReads).toBe(0);
 });
 
@@ -185,4 +446,139 @@ test("foreign source results and late results after cancellation or session swit
     waiting.resolve(); await expect(pending).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
     expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0); expect(f.state.signal?.aborted).toBe(true);
   }
+});
+
+
+for (const spelling of ["canonical", "short"] as const) test("a confirmed Required's " + spelling + " resource batch survives omission from the current directory", async () => {
+  const f = await fixture(), { task, required } = await f.confirmTask();
+  const selected = sessionSelection(f.ctx), active = activeSources(f.ctx);
+  expect([...active.selection.scopes.get(required.sourceScope!)!.roots]).toEqual([task.id!]);
+  expect([...active.sources.values()].find(source => source.record.id === required.id)?.record.preparationBinding).toEqual(required.preparationBinding);
+  const paths = f.files.slice(0, 2).map(file => spelling === "short" ? f.short.resource(f.ctx, required, file.ref) : file.ref);
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id);
+  await f.host.refresh(f.ctx);
+  // The exact scalar route already has the required same-owner proof.
+  expect(sourceMessageText((await f.read({ path: paths[0] })).content)).toContain(f.files[0]!.content);
+  const before = f.state.calls.length;
+  let result: Awaited<ReturnType<typeof f.read>> | undefined, error: unknown;
+  try { result = await f.read({ paths }); } catch (cause) { error = cause; }
+  const evidence = process.env.CONTEXT_BROKER_RESOURCE_BATCH_EVIDENCE;
+  if (evidence) await writeFile(join(evidence, "omitted-required-" + spelling + ".json"), JSON.stringify({
+    schema: 1, level: "production host/Pi read adapter, controlled resource producer and session manager; real selection/confirmation writers",
+    task_root: task.preparationBinding, required: { binding: required.preparationBinding, complete_manifest: required.entryManifest },
+    input: { paths }, scalar_control: { content: f.files[0]!.content }, batch_calls: f.state.calls.slice(before),
+    branch: f.state.entries, result, error: error instanceof Error ? { message: error.message, code: "code" in error ? error.code : undefined } : error,
+    main_reads: f.state.mainReads, selection_commits_from_read: f.state.persisted,
+  }, null, 2) + "\n", { flag: "wx" });
+  expect(error).toBeUndefined();
+  expect(result?.structuredContent).toMatchObject({ status: "ready", files: [{ content: f.files[0]!.content }, { content: "" }] });
+  expect(f.state.calls).toHaveLength(before + 1);
+  expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(sessionSelection(f.ctx)).toEqual(selected); expect(activeSources(f.ctx)).toEqual(active);
+  expect(f.state.catalog.some(record => record.id === required.id)).toBe(false);
+  await expect(f.use({ ref: required.preparationBinding!.ref })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_MISSING" });
+  expect(f.state.mainReads).toBe(0);
+});
+
+
+test("confirmed batch fallback checks every requested owner snapshot and File before acquisition", async () => {
+  const f = await fixture(), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  const first = f.files[0]!.ref, second = f.files[1]!.ref;
+  for (const paths of [
+    [first, second.replace("skill://owner/", "skill://foreign/")],
+    [first, second.replace(required.snapshotId!, "s_" + hash("foreign snapshot"))],
+    [first, second + "&file_id=unconfirmed"],
+    [first, f.ref("references/unconfirmed.md")],
+    [first, second.split("?")[0]!],
+    Array.from({ length: DEFAULT_RESOURCE_READ_BUDGET.maxFiles + 1 }, (_, n) => f.ref("references/" + n + ".md")),
+  ]) await expect(f.read({ paths })).rejects.toThrow();
+  expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0);
+});
+
+test("confirmed batch fallback keeps original file hashes and exact physical owner commitments", async () => {
+  const f = await fixture(), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  const paths = f.files.slice(0, 2).map(file => file.ref), selection = sessionSelection(f.ctx), active = activeSources(f.ctx);
+  f.state.transform = batch => ({ ...batch, ownerBinding: { ...batch.ownerBinding, record: { ...batch.ownerBinding.record,
+    locator: { ...batch.ownerBinding.record.locator, page_id: "00000000-0000-4000-8000-000000009999" } } } });
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+  f.state.transform = batch => ({ ...batch, files: batch.files.map((file, index) => index === 0 ? file
+    : { ...file, encoding: "utf8" as const, content: "Changed second file", bytes: 19, sha256: hash("Changed second file") }) });
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+  expect(sessionSelection(f.ctx)).toEqual(selection); expect(activeSources(f.ctx)).toEqual(active);
+});
+
+test("an authoritative failure blocks later confirmed batches without reviving their omitted directory owner", async () => {
+  const f = await fixture(), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  const paths = f.files.slice(0, 2).map(file => file.ref);
+  f.state.failure = new SourceError("AUTH_REQUIRED", "notion");
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+  const requests = f.state.calls.length; f.state.failure = undefined;
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+  expect(f.state.calls).toHaveLength(requests); expect(f.state.mainReads).toBe(0);
+});
+
+test("released Required resources cannot borrow confirmed batch proof from history", async () => {
+  const f = await fixture(), { task, required } = await f.confirmTask();
+  const paths = f.files.slice(0, 2).map(file => f.short.resource(f.ctx, required, file.ref));
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  await f.control({ working_set: "release", roots: [task.preparationBinding!.ref] });
+  expect(activeSources(f.ctx).sources.size).toBe(0);
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_MISSING" });
+  expect(f.state.calls).toHaveLength(0);
+});
+
+for (const boundary of ["abort", "session", "release"] as const) test("late confirmed batch results cannot survive " + boundary, async () => {
+  const f = await fixture(), { task, required } = await f.confirmTask();
+  const paths = f.files.slice(0, 2).map(file => f.short.resource(f.ctx, required, file.ref));
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  const waiting = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>(), controller = new AbortController();
+  f.state.wait = () => { entered.resolve(); return waiting.promise; };
+  const pending = f.read({ paths }, controller.signal).then(value => ({ value }), error => ({ error }));
+  expect(await Promise.race([entered.promise.then(() => "entered"), pending])).toBe("entered");
+  if (boundary === "abort") controller.abort();
+  else if (boundary === "session") { f.state.id = "another-current-session"; await f.emit("session_switch"); }
+  else await f.control({ working_set: "release", roots: [task.preparationBinding!.ref] });
+  waiting.resolve();
+  expect(await pending).toMatchObject({ error: { code: "SOURCE_CANCELLED" } });
+  expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+});
+
+
+test("an unrelated source failure does not veto a confirmed fixed read with its own successful scope observation", async () => {
+  const f = await fixture({ otherSource: true }), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  f.state.lookupFailures = [{ sourceId: "other-source", namespace: "other-source", type: "notion", code: "NOTION_UNAVAILABLE", message: "Independent lookup failed" }];
+  const paths = f.files.slice(0, 2).map(file => file.ref);
+  expect(sourceMessageText((await f.read({ path: paths[0] })).content)).toContain(f.files[0]!.content);
+  expect(await f.read({ paths })).toHaveProperty("structuredContent.status", "ready");
+  // Existing use still needs a current candidate; read proof is not promotion.
+  await expect(f.use({ ref: required.preparationBinding!.ref })).rejects.toMatchObject({ code: "NOTION_UNAVAILABLE" });
+});
+
+test("unrelated failure cannot mask missing owner scope evidence or its own authorization failure", async () => {
+  const f = await fixture({ otherSource: true }), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  const other: SourceFailure = { sourceId: "other-source", namespace: "other-source", type: "notion", code: "NOTION_UNAVAILABLE", message: "Independent lookup failed" };
+  const paths = f.files.slice(0, 2).map(file => file.ref);
+  f.state.lookupFailures = [other]; f.state.lookupScope = false;
+  await expect(f.read({ paths })).rejects.toMatchObject({ code: "NOTION_UNAVAILABLE" });
+  f.state.lookupScope = true;
+  for (const code of ["AUTH_REQUIRED", "ACCESS_DENIED"]) {
+    f.state.lookupFailures = [other, { sourceId: "notion", namespace: "notion", type: "notion", code, message: "Owner scope rejected" }];
+    await expect(f.read({ paths })).rejects.toMatchObject({ code });
+  }
+  expect(f.state.calls).toHaveLength(0);
+});
+
+
+test("a directory query access failure is not an exact owner denial", async () => {
+  const f = await fixture(), { required } = await f.confirmTask();
+  f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
+  f.state.lookupFailures = [{ sourceId: "notion", namespace: "notion", type: "notion", code: "ACCESS_DENIED", message: "Directory query refused without an owner fact" }];
+  await expect(f.read({ paths: f.files.slice(0, 2).map(file => file.ref) })).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(() => f.host.assertCanRestore(required)).not.toThrow();
+  expect(f.state.calls).toHaveLength(0);
 });

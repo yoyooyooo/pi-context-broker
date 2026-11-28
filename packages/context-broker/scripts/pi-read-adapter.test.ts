@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
-import type { ExtensionAPI, ExtensionContext, NativeReadResult, PiReadDefinition } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, NativeReadResult, NativeToolRenderers, PiReadDefinition } from "../src/types";
 
 function fixture(owner = "builtin", enabled = true) {
   const handlers: Array<(event: never, ctx: ExtensionContext) => unknown> = [];
@@ -33,7 +34,8 @@ test("Pi scalar read preserves the public native executor, images, settings and 
   const result = await f.current().execute("scalar-id", { path: "image.png", offset: 2, limit: 3 }, signal, value => updates.push(value), f.ctx);
   expect(result).toBe(f.content); expect(updates).toEqual([f.content]); expect(ids).toEqual(["scalar-id"]);
   expect(f.calls[0]).toMatchObject({ id: "scalar-id", input: { path: "/resolved/image.png", offset: 2, limit: 3 }, signal, ctx: f.ctx });
-  expect(f.current().renderResult).toBe(f.native.renderResult);
+  expect(f.current().renderResult?.(result, { expanded: true }, {}, {})).toBe("native rendering");
+  expect(f.current().renderCall?.({ path: "local/SKILL.md" }, {}, {})).toMatchObject({ args: { path: "local/SKILL.md" } });
   expect(f.current().promptGuidelines).toEqual(f.native.promptGuidelines);
   expect(f.current().outputSchema).toMatchObject({ anyOf: [f.native.outputSchema, { type: "object" }] });
   f.replace(); expect(owns()).toBe(false);
@@ -46,12 +48,35 @@ test("Pi batch is one branch of read and retains structured results without ente
   await f.start();
   expect(await f.current().execute("batch-id", { paths: [ref] }, undefined, undefined, f.ctx)).toBe(batch);
   expect(f.calls).toHaveLength(0);
-  for (const input of [{}, { path: "one", paths: ["two"] }, { paths: ["one"], offset: 2 }, { paths: "one" }]) {
+  for (const input of [{}, { ref }, { path: "one", ref }, { path: "one", paths: ["two"] }, { paths: ["one"], offset: 2 }, { paths: "one" }]) {
     await expect(f.current().execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
   expect(f.current().renderCall?.({ paths: ["one", "two"] }, {}, {})).toMatchObject({ args: { path: "one, two" } });
   expect(f.current().parameters).toMatchObject({ type: "object", properties: { paths: { type: "array", minItems: 1, maxItems: 16 } } });
   expect(f.current().parameters.required ?? []).not.toContain("path");
+});
+
+test("Pi relative reads pass the exact containing file to preparation and remove from before native I/O", async () => {
+  const f = fixture(), from = "sr:R" + "a".repeat(22), inputs: unknown[] = [];
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { inputs.push(input); return read({ ...input, path: "/fixed-target/SKILL.md" }, signal); });
+  await f.start();
+  await f.current().execute("relative", { path: "../../member/SKILL.md", from, offset: 2 }, undefined, undefined, f.ctx);
+  expect(inputs).toEqual([{ path: "../../member/SKILL.md", from, offset: 2 }]);
+  expect(f.calls[0]).toMatchObject({ input: { path: "/fixed-target/SKILL.md", offset: 2 } });
+  expect(f.calls[0]).not.toHaveProperty("input.from");
+  await f.current().execute("contextual-uri", { path: "skill://target/SKILL.md", from }, undefined, undefined, f.ctx);
+  expect(inputs[1]).toEqual({ path: "skill://target/SKILL.md", from });
+  expect(f.calls[1]).not.toHaveProperty("input.from");
+  expect(f.current().parameters).toMatchObject({ properties: { from: { type: "string", description: expect.stringContaining("actual file containing") } } });
+  for (const input of [
+    { path: "../member/SKILL.md", from: "sr:C" + "a".repeat(22) },
+    { path: "../member/SKILL.md", from: "skill://root/SKILL.md?library=93a845c1-6c12-5b02-b395-ecf819622e7f" },
+    { path: "../member/SKILL.md", from: null }, { path: "/absolute.md", from },
+    { path: "~/home.md", from }, { path: "C:\\target.md", from },
+    { path: "../member/SKILL.md#section", from }, { path: "../member/SKILL.md", from, refresh: true },
+    { paths: [from], from },
+  ]) await expect(f.current().execute("invalid-relative", input, undefined, undefined, f.ctx)).rejects.toBeDefined();
+  expect(inputs).toHaveLength(2); expect(f.calls).toHaveLength(2);
 });
 
 test("Pi read advertises an object schema without provider-rejected top-level combinators", async () => {
@@ -60,10 +85,38 @@ test("Pi read advertises an object schema without provider-rejected top-level co
   await f.start();
   const schema = f.current().parameters;
   expect(schema.type).toBe("object");
+  expect(schema.additionalProperties).toBe(false);
   // The actual provider rejects these root keywords before invoking any tool.
   expect(Object.keys(schema).filter(key => ["oneOf", "anyOf", "allOf", "enum", "const", "not"].includes(key))).toEqual([]);
   expect(schema.properties).toHaveProperty("path");
   expect(schema.properties).toHaveProperty("paths");
+  expect(schema.properties).not.toHaveProperty("readOnly");
+  expect(schema.properties).not.toHaveProperty("ref");
+});
+
+test("AH639 public batch read preserves the three issued refs", async () => {
+  const f = fixture(), calls: unknown[] = [];
+  const paths = ["sr:RouocPFZv5M2VY1whhsEmpw", "sr:RTewfftdPpctkYChWg0myJA", "sr:R6LBduFSn5Pij6sdLTsoEZg"];
+  const batch = { content: [{ type: "text" as const, text: "batch" }] };
+  f.adapter.registerReadExecutor!(async (input, _ctx, _signal, _read, id) => { calls.push({ id, input }); return batch; });
+  await f.start();
+  expect(f.current().parameters).toMatchObject({ properties: { paths: { type: "array" } } });
+  const id = "call-56bb786b-68ea-44cc-af6a-8b9ce087776b-3__rk16__T8Q_3Wz_5W-D8F5y";
+  expect(await f.current().execute(id, { paths }, undefined, undefined, f.ctx)).toBe(batch);
+  expect(calls).toEqual([{ id, input: { paths } }]); expect(f.calls).toHaveLength(0);
+});
+
+test("Pi rejects the retired readOnly key before scalar or batch preparation and native I/O", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22);
+  let preparations = 0;
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { preparations++; return read(input, signal); });
+  await f.start();
+  for (const readOnly of [true, false, undefined, "true", null, 1]) {
+    for (const input of [{ path: "local.md", readOnly }, { path: ref, readOnly }, { paths: [ref], readOnly }]) {
+      await expect(f.current().execute("retired-argument", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", message: expect.stringContaining("readOnly is not supported") });
+    }
+  }
+  expect(preparations).toBe(0); expect(f.calls).toHaveLength(0);
 });
 
 test("Pi read rejects invalid scalar and batch arguments before shared preparation or native I/O", async () => {
@@ -106,8 +159,18 @@ test("Pi scalar read advertises issued Skill refs without changing the native de
   expect(schema.properties.path.description).toContain("skill://");
   expect(schema.properties.path.description).toContain("sr:");
   expect(schema.properties.path.description).toContain("verbatim");
-  expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
+  expect(f.current().description).toStartWith("For Notion introductions, summaries, comparisons or inspection,");
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
+  expect(f.current().description).toContain("Notion reads do not write to the remote library");
+  expect(f.current().description).toContain("applying a chosen Skill, call notion_use directly");
+  expect(f.current().description).toContain("loads the root and Requires without a preliminary main read");
+  expect(f.current().description).toContain("paths reads fixed resources of one owner and snapshot together");
+  expect(f.current().parameters).toMatchObject({ properties: { refresh: {
+    description: expect.stringMatching(/only for a user-requested current-version inspection;.*Keeps the active selection unchanged\..*Only for a supplied Notion Skill ref in path/),
+  } } });
+  expect(f.current().description).not.toContain("When the user requests latest content");
+  expect(f.current().description).not.toContain("readOnly");
+  expect(f.current().description).not.toContain("retain history");
   expect(JSON.stringify(f.native.parameters)).toBe(before);
 });
 
@@ -118,4 +181,130 @@ test("Pi preserves disabled read and never replaces a third-party read", async (
   const thirdParty = fixture("local"), owns = thirdParty.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }))!;
   await thirdParty.start();
   expect(owns()).toBe(false); expect(thirdParty.factories).toHaveLength(0); expect(thirdParty.current().parameters).toBe(thirdParty.native.parameters);
+});
+
+
+test("explicit latest inspection is scalar Notion-only and never leaks refresh to native file I/O", async () => {
+  const f = fixture(), selected = "sr:S" + "a".repeat(22);
+  const requests: unknown[] = [];
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { requests.push(input); return read({ path: "/current/SKILL.md" }, signal); });
+  await f.start();
+  expect(f.current().parameters).toMatchObject({ properties: { refresh: { type: "boolean" } } });
+  await f.current().execute("latest-inspect", { path: selected, refresh: true }, undefined, undefined, f.ctx);
+  expect(requests).toEqual([{ path: selected, refresh: true }]);
+  expect(f.calls[0]).toMatchObject({ input: { path: "/current/SKILL.md" } });
+  for (const input of [{ path: "local.md", refresh: true }, { path: selected, refresh: "true" },
+    { paths: ["sr:R" + "b".repeat(22)], refresh: true }]) {
+    await expect(f.current().execute("invalid-refresh", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(requests).toHaveLength(1);
+});
+
+test("explicit resource batch time budget reaches the same public read executor", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22);
+  const calls: unknown[] = [], result = { content: [{ type: "text" as const, text: "ready" }] };
+  f.adapter.registerReadExecutor!(async (input) => { calls.push(input); return result; });
+  await f.start();
+  const input = { paths: [ref], budget: { timeBudgetMs: 120000 } };
+  let actual: unknown, failure: unknown;
+  try { actual = await f.current().execute("explicit-wait", input, undefined, undefined, f.ctx); } catch (error) { failure = error; }
+  expect(failure).toBeUndefined();
+  expect(actual).toBe(result); expect(calls).toEqual([input]); expect(f.calls).toHaveLength(0);
+});
+
+test("Pi resource batch advertises one bounded timeBudgetMs field without increasing file or byte limits", async () => {
+  const f = fixture();
+  f.adapter.registerReadExecutor!(async () => ({ content: [] })); await f.start();
+  expect(f.current().parameters).toMatchObject({ properties: {
+    paths: { maxItems: 16 },
+    budget: { type: "object", additionalProperties: false, required: ["timeBudgetMs"],
+      properties: { timeBudgetMs: { type: "integer", minimum: 1, maximum: 120000 } } },
+  } });
+});
+
+test("Pi rejects invalid or non-batch time budgets before preparation or native I/O", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22), calls: unknown[] = [];
+  f.adapter.registerReadExecutor!(async input => { calls.push(input); return { content: [] }; }); await f.start();
+  for (const budget of [null, 120000, "120000", [], {}, { timeout: 120000 },
+    { timeBudgetMs: 0 }, { timeBudgetMs: -1 }, { timeBudgetMs: 1.5 }, { timeBudgetMs: 120001 },
+    { timeBudgetMs: Number.NaN }, { timeBudgetMs: Number.POSITIVE_INFINITY }, { timeBudgetMs: "120000" },
+    { timeBudgetMs: 120000, maxFiles: 64 }, { timeBudgetMs: 120000, maxBytes: 16777216 }]) {
+    await expect(f.current().execute("invalid-budget", { paths: [ref], budget }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  for (const input of [{ path: "local.md", budget: { timeBudgetMs: 120000 } },
+    { path: ref, budget: { timeBudgetMs: 120000 } }, { paths: [ref], timeBudgetMs: 120000 },
+    { paths: [ref], timeout: 120000 }]) {
+    await expect(f.current().execute("invalid-budget-route", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(calls).toHaveLength(0); expect(f.calls).toHaveLength(0);
+});
+
+function rendererResolver(f: ReturnType<typeof fixture>) {
+  let registered: Parameters<NonNullable<ExtensionAPI["registerToolRenderer"]>>[0] | undefined;
+  f.api.registerToolRenderer = resolver => { registered = resolver; };
+  return (toolName: string, base: NativeToolRenderers | undefined) => {
+    if (!registered) throw new Error("Renderer resolver must be registered before session_start");
+    return registered(toolName, () => base);
+  };
+}
+
+test("Pi resume decorates the first saved read frame before session_start without metadata or execution", async () => {
+  const f = fixture(), resolve = rendererResolver(f), allTools = f.api.getAllTools!;
+  let bound = false, lookups = 0;
+  f.api.getAllTools = () => {
+    lookups++;
+    if (!bound) throw new Error("Pi has not bound getAllTools yet");
+    return allTools();
+  };
+  f.adapter.registerReadExecutor!(async () => { throw new Error("Replay must not execute"); },
+    () => { throw new Error("Replay must use saved display details"); });
+  const ref = "sr:R" + "r".repeat(22), args = { path: ref };
+  const result: NativeReadResult = JSON.parse(JSON.stringify({ content: [{ type: "text", text: "saved file body" }], details: {
+    contextBrokerReadDisplay: { version: 1, source: "notion", sourceId: "library", scope: "shared", kind: "file",
+      name: "saved skill", files: [{ ref, path: "references/policy.md" }] },
+  } }));
+  const before = JSON.stringify(result);
+  const header = { text: "", setText(text: string) { this.text = text; } }, body = { native: "result component" };
+  const native: NativeToolRenderers = {
+    renderShell: "self",
+    renderCall(input) { header.setText(`native read ${input.path}`); return header; },
+    renderResult(saved) { expect(saved).toBe(result); return body; },
+  };
+  const renderers = resolve("read", native);
+  const context = { args, state: {}, toolCallId: "resumed-read", expanded: false, executionStarted: false,
+    isPartial: false, isError: false, keyText: () => "ctrl+o" };
+  const theme = { fg: (_color: string, text: string) => text };
+  expect(renderers?.renderShell).toBe("self");
+  expect(renderers?.renderCall?.(args, theme, context)).toBe(header);
+  expect(renderers?.renderResult?.(result, { expanded: false, isPartial: false }, theme, context)).toBe(body);
+  expect(stripVTControlCharacters(header.text)).toBe("[file@notion] saved skill / references/policy.md (ctrl+o to expand)");
+  expect(JSON.stringify(result)).toBe(before);
+  expect(lookups).toBe(0); expect(f.factories).toHaveLength(0); expect(f.calls).toHaveLength(0);
+  expect(f.current().parameters).toBe(f.native.parameters);
+
+  bound = true;
+  await f.start();
+  // The resolver is the only decoration layer on Pi versions that support it.
+  expect(f.current().renderCall).toBe(f.native.renderCall);
+  expect(f.current().renderResult).toBe(f.native.renderResult);
+  expect(resolve("read", f.current())?.renderCall).not.toBe(f.native.renderCall);
+  expect(f.calls).toHaveLength(0);
+});
+
+test("Pi read resolver preserves other tools, missing renderers and third-party ownership", async () => {
+  const f = fixture(), resolve = rendererResolver(f);
+  f.adapter.registerReadExecutor!(async () => ({ content: [] }));
+  const other: NativeToolRenderers = { renderShell: "self", renderCall: () => "other call", renderResult: () => "other result" };
+  expect(resolve("notion_use", other)).toBe(other);
+  expect(resolve("read", undefined)).toBeUndefined();
+  await f.start();
+  f.replace();
+  expect(resolve("read", other)).toBe(other);
+
+  const foreign = fixture("local"), resolveForeign = rendererResolver(foreign);
+  foreign.adapter.registerReadExecutor!(async () => ({ content: [] }));
+  await foreign.start();
+  expect(resolveForeign("read", other)).toBe(other);
+  expect(foreign.factories).toHaveLength(0);
+  expect(foreign.current().parameters).toBe(foreign.native.parameters);
 });

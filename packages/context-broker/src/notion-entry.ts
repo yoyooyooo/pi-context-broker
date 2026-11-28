@@ -3,7 +3,7 @@ import { link, lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { SourceError } from "./notion-source";
-import { nativeResourcePath, parseNativeReference } from "./native-reference";
+import { nativeResourcePath, nativeFileBinding, parseNativeReference } from "./native-reference";
 import type { SkillRecord } from "./types";
 import type { ResourceReadFile, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 
@@ -30,8 +30,7 @@ function manifestFiles(record: SkillRecord, files: readonly EntryFile[]) {
     paths.add(file.path);
     const reference = parseNativeReference(file.ref);
     if (reference.snapshot !== record.snapshotId || reference.path !== file.path || nativeResourcePath(reference, record) !== file.path) fail(record, "SOURCE_PREPARATION_INVALID");
-    const binding = record.fileBindings?.find(value => value.path === file.path);
-    if (reference.fileId !== binding?.file_id) fail(record, "SOURCE_PREPARATION_INVALID");
+    nativeFileBinding(record, file.path);
   }
   if (!paths.has(record.entrypoint!) || record.fileBindings?.some(binding => !paths.has(binding.path))) fail(record, "SOURCE_PREPARATION_INVALID");
   return files.map(file => ({ ...file })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);

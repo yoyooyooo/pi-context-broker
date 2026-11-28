@@ -48,7 +48,7 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
       }
     }
     for (const waiter of [...eventWaiters]) {
-      if (waiter.matches(frame)) { eventWaiters.delete(waiter); waiter.resolve(frame); }
+      if (waiter.matches(frame)) { eventWaiters.delete(waiter); waiter.resolve({ frame, index: frames.length - 1 }); }
     }
   });
   child.stderr.on("data", (chunk) => { stderr = (stderr + chunk.toString("utf8")).slice(-16_384); });
@@ -93,31 +93,76 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
   const prompt = async (message) => {
     if (prompting) throw new Error(`${host}: concurrent prompts are unsupported`);
     prompting = true;
+    const firstFrame = frames.length;
     let completionWaiter;
-    const completed = withDeadline("prompt completion", (waiter) => {
-      completionWaiter = { ...waiter, matches: (frame) => host === "omp" ? frame.type === "prompt_result" : frame.type === "agent_end" || frame.type === "prompt_result" };
+    const nextFrame = (after, type) => new Promise((resolve, reject) => {
+      if (failure) { reject(failure); return; }
+      if (stopped || stopping) { reject(new Error(`${host}: RPC is stopped`)); return; }
+      // stdout is subscribed before prompt submission. Search the retained
+      // frames too: a fast continuation can settle before get_state replies.
+      for (let index = after; index < frames.length; index++) {
+        if (frames[index].type === type) { resolve({ frame: frames[index], index }); return; }
+      }
+      completionWaiter = { resolve, reject, matches: (frame) => frame.type === type };
       eventWaiters.add(completionWaiter);
     });
-    // Attach both rejection handlers before either promise can reject.
-    try {
-      const acknowledged = command("prompt", { message }).then((data) => {
-        if ((data?.agentInvoked === false || data?.disposition === "handled") && eventWaiters.delete(completionWaiter)) {
-          completionWaiter.resolve({ type: "prompt_result", agentInvoked: false, status: "completed", sessionSettled: true });
-        }
-        return data;
-      });
-      const [, frame] = await Promise.all([acknowledged, completed]);
-      if (frame.error || frame.success === false || (frame.status && frame.status !== "completed")) {
-        throw new Error(`${host}: prompt failed: ${redact(frame.error?.message ?? frame.error ?? frame.status ?? "unknown prompt error")}${diagnostic()}`);
+    const assertCompleted = (frame) => {
+      if (frame.aborted === true || frame.error || frame.success === false || (frame.status && frame.status !== "completed")) {
+        throw new Error(`${host}: prompt failed: ${redact(frame.error?.message ?? frame.error ?? (frame.aborted ? "aborted" : frame.status) ?? "unknown prompt error")}${diagnostic()}`);
       }
       for (const item of frame.messages ?? []) {
         if (item.role === "assistant" && (item.stopReason === "error" || item.stopReason === "aborted")) {
           throw new Error(`${host}: assistant ${item.stopReason}: ${redact(item.errorMessage ?? "prompt did not complete")}${diagnostic()}`);
         }
       }
-      return frame;
+    };
+    try {
+      // One deadline covers acknowledgement, every automatic continuation,
+      // and the final state query. A new settled event never resets the budget.
+      return await withDeadline("prompt completion", (completion) => {
+        const run = async () => {
+          const acknowledged = await command("prompt", { message });
+          const handled = acknowledged?.agentInvoked === false || acknowledged?.disposition === "handled";
+          const handledFrame = { type: "prompt_result", agentInvoked: false, status: "completed", sessionSettled: true };
+          if (host === "omp") {
+            const frame = handled ? handledFrame : (await nextFrame(firstFrame, "prompt_result")).frame;
+            assertCompleted(frame);
+            return frame;
+          }
+          let cursor = firstFrame;
+          let settled = handled ? { frame: handledFrame, index: firstFrame - 1 } : await nextFrame(cursor, "agent_settled");
+          for (;;) {
+            assertCompleted(settled.frame);
+            const state = await command("get_state");
+            if (typeof state?.isStreaming !== "boolean" || typeof state?.isCompacting !== "boolean" ||
+                !Number.isSafeInteger(state?.pendingMessageCount) || state.pendingMessageCount < 0) {
+              throw new Error(`${host}: get_state lacks valid Pi settlement fields${diagnostic()}`);
+            }
+            // Pi runs agent_settled extension handlers before forwarding the
+            // event, then starts their deferred follow-ups. get_state observes
+            // that busy state. Also reject a stale idle response if a newer run
+            // already appeared in the ordered RPC stream.
+            const newerActivity = frames.slice(settled.index + 1).some((frame) =>
+              ["agent_start", "agent_end", "agent_settled", "auto_compaction_start"].includes(frame.type) ||
+              (frame.type === "queue_update" && (frame.steering?.length > 0 || frame.followUp?.length > 0)));
+            if (!state.isStreaming && !state.isCompacting && state.pendingMessageCount === 0 && !newerActivity) {
+              // Preserve the return contract: callers may inspect the last
+              // native agent_end messages. The actual settled/state frames stay
+              // untouched in frames for independent audit.
+              const end = frames.slice(cursor, settled.index).findLast((frame) => frame.type === "agent_end");
+              if (!end && settled.index >= firstFrame) throw new Error(`${host}: agent_settled has no preceding agent_end${diagnostic()}`);
+              const result = end ?? handledFrame;
+              assertCompleted(result);
+              return result;
+            }
+            cursor = settled.index + 1;
+            settled = await nextFrame(cursor, "agent_settled");
+          }
+        };
+        run().then(completion.resolve, completion.reject);
+      });
     } finally {
-      if (completionWaiter && eventWaiters.delete(completionWaiter)) completionWaiter.resolve(undefined);
+      if (completionWaiter) eventWaiters.delete(completionWaiter);
       prompting = false;
     }
   };

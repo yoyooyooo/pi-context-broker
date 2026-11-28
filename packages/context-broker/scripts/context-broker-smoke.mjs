@@ -1,3 +1,4 @@
+import { completionMenu } from "./fixtures/completion-menu.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -749,6 +750,7 @@ try {
   assert.equal(dollarAmbiguous, undefined, "ambiguous dollar skill must fail closed");
 
   const baseAutocompleteProvider = {
+    triggerCharacters: ["#", "@", "$"],
     async getSuggestions() {
       return {
         items: [{ value: "fallback", label: "fallback" }],
@@ -764,8 +766,18 @@ try {
   };
   const autocompleteProvider = mod.createDollarSkillAutocompleteProvider(
     baseAutocompleteProvider,
-    Promise.resolve(dollarRegistry),
+    completionMenu(dollarRegistry),
   );
+  assert.deepEqual(autocompleteProvider.triggerCharacters, ["#", "@", "$"]);
+  assert.notEqual(autocompleteProvider.triggerCharacters, baseAutocompleteProvider.triggerCharacters);
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: undefined },
+    completionMenu(dollarRegistry),
+  ).triggerCharacters, ["$"], "Pi must receive an explicit dollar trigger even without upstream triggers");
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: ["#", "@"] },
+    completionMenu(dollarRegistry),
+  ).triggerCharacters, ["#", "@", "$"], "Preserve existing provider triggers");
   const autocompleteSignal = new AbortController().signal;
   const dollarSuggestions = await autocompleteProvider.getSuggestions(["use $pl"], 0, "use $pl".length, {
     signal: autocompleteSignal,
@@ -803,7 +815,7 @@ try {
     ["use $pl"],
     0,
     "use $pl".length,
-    { value: "$plain", label: "$plain", description: "Plain skill not enabled" },
+    dollarSuggestions.items.find(item => item.value === "$plain"),
     "$pl",
   );
   assert.equal(dollarCompletion.lines[0], "use $plain ");
@@ -1097,175 +1109,13 @@ try {
   );
   assert.equal(configuredInjection?.messages.at(-1)?.details.path, join(globalRoot, "linked/SKILL.md"));
 
-  // Exercise the external process boundary, not source-text wiring.
+  // Current SDK source/manifest/resource failures are exercised in
+  // notion-source-sdk.test.ts and shared-notion-adapter.test.ts.
   const sourcesMod = await import("../src/sources.ts");
-  assert.throws(() => sourcesMod.normalizeSources([{ type: "notion", id: "bad", command: [] }]), { code: "SOURCE_CONFIG_INVALID" });
+  assert.throws(() => sourcesMod.normalizeSources([{ type: "notion", id: "bad", command: [] }]), { code: "SOURCE_COMMAND_UNSUPPORTED" });
   assert.throws(() => sourcesMod.normalizeSources([{ type: "notion", id: "bad", discovery: { maxAge: "1.5h" } }]), { code: "SOURCE_CONFIG_INVALID" });
   assert.throws(() => sourcesMod.normalizeSources([{ type: "notion", id: "bad" }, { type: "notion", id: "bad" }]), { code: "SOURCE_CONFIG_INVALID" });
-  assert.deepEqual(await sourcesMod.discoverSources({ sources: [{ type: "notion", id: "disabled", enabled: false, command: "/missing-disabled-executable" }] }), []);
-  await assert.rejects(sourcesMod.discoverSources({ sources: [{ type: "notion", id: "missing", command: join(temp, "absent-command") }] }), { code: "SOURCE_COMMAND_UNAVAILABLE" });
-  const adapterFixture = join(temp, "source-negative-fixture.mjs");
-  await writeFile(adapterFixture, `
-import { mkdir, writeFile, appendFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-const [mode, log, ...args] = process.argv.slice(2);
-await appendFile(log, JSON.stringify(args) + '\\n');
-const scope = 'a'.repeat(64), snapshot = 's_' + (mode === 'renamed' ? 'e' : 'b').repeat(64);
-const db = '00000000-0000-4000-8000-000000000010';
-const ds = '00000000-0000-4000-8000-000000000020';
-const makeSkill = id => ({id:'notion_page:'+id, kind:'skill', locator:{type:'notion_page',page_id:id,database_id:db,data_source_id:ds}, entrypoint:'SKILL.md', name:'Source Skill', alias:'source-skill', description:'source fixture', ref:'skill://' + id + '/SKILL.md', default_context:mode === 'flagged'});
-const item = makeSkill('00000000-0000-4000-8000-000000000001');
-if (mode === 'unknown-kind') item.kind = 'bundle';
-if (mode === 'missing-kind') delete item.kind;
-if (mode === 'bad-locator') item.locator.page_id = 'not-a-page';
-if (mode === 'missing-default') delete item.default_context;
-if (mode === 'renamed' && args[0] !== 'list') { item.name = 'Renamed Source Skill'; item.alias = 'renamed-source-skill'; item.description = 'Renamed description'; }
-if (mode === 'page-drift' && args[0] === 'read') Object.assign(item, makeSkill('00000000-0000-4000-8000-000000000099'));
-if (mode === 'read-locator' && args[0] === 'read') item.locator.data_source_id = '00000000-0000-4000-8000-000000000099';
-const fresh = {policy:'default',validated_at:new Date(0).toISOString(),age_ms:0,max_age_ms:60000,stale:false};
-if (mode === 'timeout') {
-  await new Promise(resolve => setTimeout(resolve, Number(process.env.NTN_SKILLS_REQUEST_TIMEOUT_MS ?? 30000)));
-  console.log(JSON.stringify({ok:false,error:{code:'NOTION_UNAVAILABLE',details:{reason:'timeout'}}}));
-  process.exitCode = 1;
-} else if (mode === 'cancel') {
-  const descendant = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {stdio:'ignore'});
-  await appendFile(log, JSON.stringify({child:descendant.pid}) + '\\n');
-  process.on('SIGTERM', () => {});
-  setInterval(() => {}, 1000);
-} else if (mode === 'malformed') console.log('{');
-else if (mode === 'secret') {
-  console.error('Bearer SUPER_SECRET_TOKEN https://private.example/?secret=SUPER_SECRET_TOKEN');
-  console.log(JSON.stringify({ok:false,error:{code:'ACCESS_DENIED',message:'SUPER_SECRET_TOKEN',details:{token:'SUPER_SECRET_TOKEN'}}}));
-  process.exitCode = 1;
-} else if (args[0] === 'list') {
-  const coverage = {method:'explicit_database',exhaustive:true,queried_data_sources:[ds],failed_sources:[],search_index_limited:false};
-  if (mode === 'incomplete') { coverage.exhaustive=false; coverage.failed_sources.push({id:ds,code:'ACCESS_DENIED'}); }
-  const skills = mode === 'duplicate' ? [item,makeSkill('00000000-0000-4000-8000-000000000002')] : [item];
-  console.log(JSON.stringify({ok:true,scope,fetched_at:0,databases:[{database_id:db,title:'Fixture',alias:'fixture',data_source_ids:[ds]}],...(mode === 'legacy-catalog' ? {skills} : {records:skills}),count:skills.length,coverage,source:'notion',freshness:fresh}));
-} else if (args[0] === 'read') {
-  console.log(JSON.stringify({ok:true,scope:mode==='scope-drift'?'c'.repeat(64):scope,record:item,entrypoint:'SKILL.md',snapshot_id:snapshot,version_id:'v1',path:'SKILL.md',ref:item.ref+'?snapshot='+snapshot,source:'notion',freshness:fresh,content:'portable body',range:{start:1,end:1,total_lines:1},has_more:mode==='partial-read'}));
-} else if (args[0] === 'export') {
-  if (mode === 'export-kind') item.kind = 'router';
-  if (mode === 'export-locator') item.locator.database_id = '00000000-0000-4000-8000-000000000099';
-  const output = args[args.indexOf('--output')+1];
-  const main = mode === 'traversal' ? '../escape.md' : 'SKILL.md';
-  const files = mode === 'entry-conflict' ? {'SKILL.md':'different body'} : {'SKILL.md':'portable body','references/guide.md':'resource guide'};
-  files['.ntn-skills.json'] = JSON.stringify({format:'ntn-skills',version:mode === 'manifest-version' ? 1 : 2,kind:'skill',name:item.name,description:item.description,main});
-  for (const [path,body] of Object.entries(files)) { await mkdir(join(output,path,'..'),{recursive:true}); await writeFile(join(output,path),body); }
-  if (mode === 'missing-resource') await writeFile(join(output,'references/guide.md'), '');
-  console.log(JSON.stringify({ok:true,scope:mode === 'export-scope' ? 'f'.repeat(64) : scope,record:item,entrypoint:mode === 'export-entry' ? 'OTHER.md' : 'SKILL.md',snapshot_id:snapshot,version_id:mode === 'export-version' ? 'v2' : 'v1',ref:item.ref+'?snapshot='+snapshot,source:'local_snapshot',freshness:{policy:'pinned'},operation:'export',projection:mode === 'source-projection' ? 'source' : args[args.indexOf('--projection')+1],format:'directory',output,reused:false,content_id:'d'.repeat(64),main_path:main,files:Object.entries(files).map(([path,body])=>({path,bytes:Buffer.byteLength(body),hash:mode === 'hash-bad' ? '0'.repeat(64) : createHash('sha256').update(body).digest('hex'),role:path === main ? 'entrypoint' : path === '.ntn-skills.json' ? 'manifest' : 'resource'}))}));
-}
-`);
-  function adapterConfig(mode, requestTimeoutMs = 5000) {
-    return { sources: [{ type: "notion", id: "fixture", command: [process.execPath, adapterFixture, mode, join(temp, `source-${mode}.jsonl`)], cacheDir: join(temp, "source-cache"), database: "fixture", requestTimeoutMs }] };
-  }
-  const partialDirectory = await sourcesMod.discoverSources(adapterConfig("incomplete"));
-  assert.ok(partialDirectory.length > 0, "Valid exact records survive unrelated partial discovery");
-  assert.equal(partialDirectory.failures[0].code, "CATALOG_INCOMPLETE");
-  assert.equal(partialDirectory.failures[0].blocking, false);
-  for (const [mode, code] of [["malformed", "SOURCE_RESPONSE_INVALID"], ["unknown-kind", "SOURCE_RESPONSE_INVALID"], ["missing-kind", "SOURCE_RESPONSE_INVALID"], ["bad-locator", "SOURCE_RESPONSE_INVALID"], ["missing-default", "SOURCE_RESPONSE_INVALID"], ["legacy-catalog", "SOURCE_RESPONSE_INVALID"], ["secret", "ACCESS_DENIED"]]) {
-    await assert.rejects(sourcesMod.discoverSources(adapterConfig(mode)), (error) => error.code === code && !JSON.stringify(error).includes("SUPER_SECRET_TOKEN") && !error.message.includes("SUPER_SECRET_TOKEN"));
-  }
-  const duplicateSources = await sourcesMod.discoverSources(adapterConfig("duplicate"));
-  assert.equal(duplicateSources.length, 2);
-  assert.equal(new Set(duplicateSources.map((record) => record.token)).size, 2);
-  assert.equal(duplicateSources[0].body, undefined);
-  assert.match(duplicateSources[0].token, /^fixture\/source-skill@/);
-  assert.doesNotMatch(await readFile(duplicateSources[0].path, "utf8"), /portable body/);
-  for (const [mode, code] of [["scope-drift", "SOURCE_IDENTITY_MISMATCH"], ["page-drift", "SOURCE_IDENTITY_MISMATCH"], ["read-locator", "SOURCE_IDENTITY_MISMATCH"], ["partial-read", "SOURCE_RESPONSE_INVALID"], ["traversal", "SOURCE_RESPONSE_INVALID"], ["entry-conflict", "SOURCE_EXPORT_INCOMPLETE"], ["missing-resource", "SOURCE_EXPORT_INCOMPLETE"], ["hash-bad", "SOURCE_EXPORT_INCOMPLETE"], ["manifest-version", "SOURCE_PORTABLE_FORMAT_UNSUPPORTED"], ["source-projection", "SOURCE_EXPORT_PROJECTION_INVALID"], ["export-kind", "SOURCE_RESPONSE_INVALID"], ["export-locator", "SOURCE_RESPONSE_INVALID"], ["export-scope", "SOURCE_RESPONSE_INVALID"], ["export-entry", "SOURCE_RESPONSE_INVALID"], ["export-version", "SOURCE_RESPONSE_INVALID"]]) {
-    const config = adapterConfig(mode);
-    const [record] = await sourcesMod.discoverSources(config);
-    await assert.rejects(sourcesMod.loadSourceSkill(record, config), { code });
-  }
-  const sourceGoodConfig = adapterConfig("good");
-  const [sourceMetadata] = await sourcesMod.discoverSources(sourceGoodConfig);
-  assert.equal(sourceMetadata.defaultDiscovery, undefined, "Full catalog metadata does not decide the active View");
-  assert.equal(sourceMetadata.default_context, false);
-  assert.equal((await sourcesMod.discoverSources(adapterConfig("unchecked")))[0].default_context, false);
-  assert.equal((await sourcesMod.discoverSources(adapterConfig("flagged")))[0].default_context, true);
-  assert.equal((await sourcesMod.discoverSources(adapterConfig("flagged")))[0].defaultDiscovery, undefined);
-  for (const kind of ["omp", "pi"]) {
-    const nativeEvents = new Map();
-    const api = {
-      ...(kind === "omp" ? { pi: {} } : {}),
-      on(name, handler) { nativeEvents.set(name, [...(nativeEvents.get(name) ?? []), handler]); },
-      registerCommand() {},
-    };
-    const flagged = { ...sourceMetadata, defaultDiscovery: true };
-    const explicit = { ...sourceMetadata, name: "explicit", token: "fixture/explicit", id: "explicit", defaultDiscovery: false, metadataIndexPath: join(temp, `native-${kind}`, "explicit", "SKILL.md"), path: join(temp, `native-${kind}`, "explicit", "SKILL.md") };
-    let selected = [flagged, explicit];
-    const adapter = kind === "omp" ? ompAdapterMod.createOmpHostAdapter(api) : piAdapterMod.createPiHostAdapter(api);
-    let prepared;
-    const native = await hostSkillsMod.installHostSkills(api, { config: sourceGoodConfig, getRecords: async () => ({ records: selected, failures: [] }), loadRecord: async record => ({ ...record, body: "Explicit complete body" }), onMetadata: records => { prepared = records; } }, adapter);
-    // Pi metadata discovery is asynchronous; inspect the settled catalog here.
-    await native.refresh();
-    const catalog = async () => {
-      if (kind === "pi") return (await nativeEvents.get("resources_discover")[0]()).skillPaths.join("\n");
-      let result;
-      for (const handler of nativeEvents.get("before_agent_start")) result = await handler({ prompt: "hello", systemPrompt: "base" }, {});
-      return result?.systemPrompt;
-    };
-    assert.match(await catalog(), /source-skill|SKILL\.md/);
-    assert.equal(prepared.length, 2, "Host metadata path retains every explicit record");
-    assert.doesNotMatch(await catalog(), /fixture-explicit|native-.*explicit/);
-    selected = [{ ...flagged, defaultDiscovery: false }, explicit];
-    await native.refresh();
-    const afterUncheck = await catalog();
-    assert.ok(!afterUncheck || !/source-skill|SKILL\.md/.test(afterUncheck), "Unchecking removes the native default catalog");
-  }
-  const sourceLoaded = await sourcesMod.loadSourceSkill(sourceMetadata, sourceGoodConfig);
-  assert.equal(sourceLoaded.body, "portable body", "activation body equals the fixed read and portable entry");
-  assert.equal(sourceLoaded.path.split("/").at(-1), "SKILL.md");
-  assert.equal(sourceLoaded.metadataIndexPath, sourceMetadata.path);
-  assert.equal(await readFile(join(sourceLoaded.path, "../references/guide.md"), "utf8"), "resource guide");
-  const renamedConfig = adapterConfig("renamed");
-  const [renameSelection] = await sourcesMod.discoverSources(renamedConfig);
-  assert.equal(renameSelection.alias, "source-skill");
-  const renamed = await sourcesMod.loadSourceSkill(renameSelection, renamedConfig);
-  assert.equal(renamed.name, "Renamed Source Skill");
-  assert.equal(renamed.alias, "renamed-source-skill");
-  assert.equal(renamed.normalizedName, renamed.alias);
-  assert.equal(renamed.description, "Renamed description");
-  assert.equal(renamed.token, renameSelection.token, "The accepted invocation keeps its original token while loaded metadata follows the selected snapshot");
-  assert.equal(discoveryMod.recordIdentity(renamed), discoveryMod.recordIdentity(renameSelection));
-  assert.equal(renamed.body, "portable body");
-  assert.equal(await readFile(join(renamed.path, "../references/guide.md"), "utf8"), "resource guide");
-  const renamedAgain = await sourcesMod.loadSourceSkill(renameSelection, renamedConfig);
-  assert.equal(renamedAgain.path, renamed.path, "The checked renamed snapshot is reusable");
-  assert.equal(renamedAgain.alias, renamed.alias);
-  assert.equal(sourceLoaded.alias, "source-skill", "A later renamed read cannot change an already selected snapshot");
-  const priorReceipt = JSON.parse(await readFile(join(sourceLoaded.path, "../.broker-snapshot.json"), "utf8"));
-  assert.equal(priorReceipt.record.alias, "source-skill");
-  const legacySourceMessages = [{ role: "custom", customType: mod.BUILTIN_SKILL_PROMPT_TYPE, content: sourceLoaded.body, details: { name: "fixture-source-skill", path: sourceMetadata.path } }];
-  assert.equal(mod.hasLoadedSkill(legacySourceMessages, sourceMetadata), false, "A legacy path marker without immutable identity and body evidence cannot suppress reloading");
-  const nativeSourceMessages = [{ role: "custom", customType: mod.CUSTOM_TYPE, content: sourceLoaded.body, details: { records: [sessionSourceMod.sourceDeliveryReceipt(sourceLoaded, sourceLoaded.body)] } }];
-  const nativeSourceContext = { sessionManager: { buildSessionContext: () => ({ messages: nativeSourceMessages }) } };
-  const afterNativeSource = await mod.invokeBeforeAgentStart({ prompt: `$${discoveryMod.recordToken(sourceMetadata)} Use the selected source again.` }, nativeSourceContext, Promise.resolve([]), sourceGoodConfig, Promise.resolve([sourceMetadata]), async () => { throw new Error("Native source body must not be reloaded"); });
-  assert.equal(afterNativeSource, undefined, "A dollar selection after native skill consumption must retain one body");
-  const otherSourceContext = { sessionManager: { buildSessionContext: () => ({ messages: [{ ...nativeSourceMessages[0], details: { records: [sessionSourceMod.sourceDeliveryReceipt({ ...sourceLoaded, sourceScope: "another-scope" }, sourceLoaded.body)] } }] }) } };
-  const afterOtherSource = await mod.invokeBeforeAgentStart({ prompt: `$${discoveryMod.recordToken(sourceMetadata)} Use this source.` }, otherSourceContext, Promise.resolve([]), sourceGoodConfig, Promise.resolve([sourceMetadata]), async () => sourceLoaded);
-  assert.match(String(afterOtherSource?.message?.content), /portable body/, "A same-name native skill from another source must not suppress activation");
-  const piNativeText = `<skill name="fixture-source-skill" location="${sourceMetadata.path}">\n${sourceLoaded.body}\n</skill>`;
-  const piNativeMarker = { role: "custom", customType: mod.CUSTOM_TYPE, content: [], details: { nativePromptSha256: createHash("sha256").update(piNativeText).digest("hex"), records: [sessionSourceMod.sourceDeliveryReceipt(sourceLoaded, piNativeText)] } };
-  assert.equal(mod.hasLoadedSkill([{ role: "user", content: piNativeText }, piNativeMarker], sourceMetadata), true, "Trusted native receipt must retain its matching body");
-  assert.equal(mod.hasLoadedSkill([piNativeMarker], sourceMetadata), false, "A receipt retained after compaction removes the body must not suppress activation");
-  assert.equal(mod.hasLoadedSkill([{ role: "user", content: piNativeText }], sourceMetadata), false, "User XML alone must not suppress source activation");
-  const concurrentConfig = adapterConfig("concurrent");
-  concurrentConfig.sources[0].cacheDir = join(temp, "source-concurrent-cache");
-  const [concurrentRecord] = await sourcesMod.discoverSources(concurrentConfig);
-  const concurrentLoads = await Promise.allSettled([
-    sourcesMod.loadSourceSkill(concurrentRecord, concurrentConfig),
-    sourcesMod.loadSourceSkill(concurrentRecord, concurrentConfig),
-  ]);
-  assert.ok(concurrentLoads.every(result => result.status === "fulfilled"), "Concurrent immutable publications converge without cache-busy errors");
-  for (const result of concurrentLoads) assert.equal(await readFile(result.value.path, "utf8"), "portable body");
-  const exportBeforeReuse = (await readFile(join(temp, "source-concurrent.jsonl"), "utf8")).trim().split("\n").filter(line => JSON.parse(line)[0] === "export").length;
-  await sourcesMod.loadSourceSkill(concurrentRecord, concurrentConfig);
-  const reuseOperations = (await readFile(join(temp, "source-concurrent.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(reuseOperations.filter(args => args[0] === "export").length, exportBeforeReuse, "Validated snapshot bytes avoid a repeat export");
-  assert.equal(reuseOperations.at(-1)[0], "read", "Warm prepared bytes still enter CLI freshness validation");
+  assert.deepEqual(await sourcesMod.discoverSources({ sources: [{ type: "notion", id: "disabled", enabled: false }] }), []);
   const localSourceRoot = join(temp, "local-source-root");
   const localSourcePath = await writeSkill(localSourceRoot, "local", "name: local-source\ndescription: local source\nautoload:\n  enabled: true", "Local source body");
   const localSourceConfig = { sources: [{ type: "filesystem", id: "local", roots: [localSourceRoot] }] };
@@ -1276,41 +1126,14 @@ else if (mode === 'secret') {
   const outsideSourcePath = await writeSkill(temp, "outside-source", "name: outside-source\nautoload:\n  enabled: true", "Outside configured roots");
   await assert.rejects(sourcesMod.loadSourceSkill({ ...localMetadata, path: outsideSourcePath, id: outsideSourcePath }, localSourceConfig), { code: "SOURCE_IDENTITY_MISMATCH" });
   assert.equal(await readFile(localSourcePath, "utf8"), (await sourcesMod.loadSourceSkill(localMetadata, localSourceConfig)).body);
-  const receiptPath = join(sourceLoaded.path, "../.broker-snapshot.json");
-  const savedReceipt = JSON.parse(await readFile(receiptPath, "utf8"));
-  const reverseKeys = value => Object.fromEntries(Object.entries(value).reverse());
-  savedReceipt.record = reverseKeys({ ...savedReceipt.record, locator: reverseKeys(savedReceipt.record.locator) });
-  savedReceipt.files = savedReceipt.files.map(reverseKeys);
-  await writeFile(receiptPath, JSON.stringify(reverseKeys(savedReceipt)));
-  assert.equal((await sourcesMod.loadSourceSkill(sourceMetadata, sourceGoodConfig)).body, "portable body", "semantically identical receipt objects remain valid regardless of JSON property order");
-  savedReceipt.version = 2;
-  delete savedReceipt.projection;
-  await writeFile(receiptPath, JSON.stringify(savedReceipt));
-  assert.equal((await sourcesMod.loadSourceSkill(sourceMetadata, sourceGoodConfig)).body, "portable body");
-  assert.equal(JSON.parse(await readFile(receiptPath, "utf8")).version, 3, "Old source-projection receipts are invalidated and rebuilt through pinned snapshot export");
-  await writeFile(sourceLoaded.path, "tampered immutable cache");
-  await assert.rejects(sourcesMod.loadSourceSkill(sourceMetadata, sourceGoodConfig), { code: "SOURCE_OUTPUT_CONFLICT" });
-  assert.equal(await readFile(sourceLoaded.path, "utf8"), "tampered immutable cache", "a conflict never replaces existing snapshot bytes");
-  await assert.rejects(sourcesMod.discoverSources(adapterConfig("timeout", 1000)), { code: "NOTION_UNAVAILABLE" });
-  const sourceAbort = new AbortController();
-  const sourceCancelled = sourcesMod.discoverSources(adapterConfig("cancel"), process.cwd(), { signal: sourceAbort.signal });
-  setTimeout(() => sourceAbort.abort(), 1000);
-  await assert.rejects(sourceCancelled, { code: "SOURCE_CANCELLED" });
-  for (const mode of ["cancel"]) {
-    const lines = (await readFile(join(temp, `source-${mode}.jsonl`), "utf8")).trim().split("\n").map(JSON.parse);
-    const descendant = lines.find((line) => line.child)?.child;
-    assert.ok(descendant, "fixture descendant starts before cancellation");
-    assert.throws(() => process.kill(descendant, 0), { code: "ESRCH" }, "cancellation closes only the owned process group, including descendants");
-  }
-
-  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", command: join(temp, "missing-notion-cli") }] });
+  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   const bundledRecords = bundledDiscovery.records.filter(builtinMod.isBundledBuiltin);
   assert.deepEqual(bundledRecords.map(record => record.alias).sort(), [...builtinMod.BUNDLED_SKILL_NAMES].sort());
   const sharedRoot = join(temp, "builtin-shared");
   await mkdir(sharedRoot);
   const builtin = bundledRecords[0];
   await symlink(join(builtin.path, ".."), join(sharedRoot, builtin.alias), "dir");
-  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", command: join(temp, "missing-notion-cli") }] });
+  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   assert.equal(configuredDiscovery.records.filter(record => record.name === builtin.name).length, 1, "A configured physical alias retains one official bundled identity");
   assert.ok(configuredDiscovery.records.some(record => record.id === builtin.id));
   const nativePrompt = `<skill><name>native-builtin-alias</name><description>Native alias</description><location>${join(sharedRoot, builtin.alias, "SKILL.md")}</location></skill>`;
@@ -1493,7 +1316,7 @@ else if (mode === 'secret') {
     const events = new Map(), commands = new Map(), sends = [];
     const api = { on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler]); }, registerCommand(name, command) { commands.set(name, command); }, sendUserMessage(value) { sends.push(value); } };
     const ctx = { mode: mode === "omp" ? "tui" : "rpc", sessionManager: { getSessionId: () => "prompt-session" } };
-    const prompt = { kind: "prompt", id: "notion_page:prompt", locator: { type: "notion_page", page_id: "prompt", database_id: "db", data_source_id: "ds" }, sourceId: "notion", source: "notion", sourceScope: "scope", name: "task", token: "notion/task", path: "/metadata/PROMPT.md", entrypoint: "PROMPT.md", description: "Task", aliases: [], normalizedName: "task", normalizedAliases: [], normalizedDescription: "task", autoloadEnabled: false, defaultDiscovery: false };
+    const prompt = { kind: "prompt", id: "skill://task?library=4d5b7e72-294c-5979-9ee5-f001de765cf4", enabled: true, ref: "skill://task/PROMPT.md?library=4d5b7e72-294c-5979-9ee5-f001de765cf4", locator: { type: "shared_skill", library_id: "4d5b7e72-294c-5979-9ee5-f001de765cf4", skill_id: "task", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" }, sourceId: "notion", source: "notion", sourceScope: "scope", name: "task", token: "notion/task", path: "/metadata/PROMPT.md", entrypoint: "PROMPT.md", description: "Task", aliases: [], normalizedName: "task", normalizedAliases: [], normalizedDescription: "task", autoloadEnabled: false, defaultDiscovery: false };
     let reads = 0, upstream = 1, host;
     const adapter = { paths: {}, submission: mode === "omp" ? { mode: "command", receipt: "handoff" } : { mode: "transform", receipt: "input-digest" }, handledInput: { action: "handled" }, continuedInput: { action: "continue" }, transformInput: (text, images) => ({ action: "transform", text, images }), registerCatalog: async records => { assert.ok(records.every(record => record.kind !== "prompt")); return true; }, buildPrompt: async () => { throw Error("Prompt must not use native Skill prompt"); }, installEditor: async () => {}, reload: async () => {}, updatedRead: input => ({ input }) };
     host = await hostSkillsMod.installHostSkills(api, { config: {}, getRecords: async () => ({ records: [prompt], failures: [] }), loadRecord: async record => { reads++; return { ...record, path: `/snapshots/s${upstream}/PROMPT.md`, body: `TASK_REQUIREMENTS_s${upstream}`, snapshotId: `snapshot-${upstream}` }; }, needsPreflightPrompt: () => true, preflightPrompt: async (_text, context, signal) => { await host.activate(prompt, context, signal); }, taskPrompt: async (text, context, signal) => text + "\n" + (await host.activate(prompt, context, signal)).body }, adapter);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { skillIdentity, skillFileRef, pinSkillRef } from './skill-ref-fixture.mjs';
 import { generatedCatalogCards, generatedDescriptionEvidence, verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -10,7 +11,7 @@ const bodies = [
   '\ufeff---\r\nname: 中文😀\r\n---\r\n# Members\r\n作者的 <body> 标签与 `{"content":"quoted"}` 示例。\r\n',
   'Second complete body with \\ and "quotes".\r\n<skill-directory>author example</skill-directory>\r\n',
 ];
-const member = { id: 'shared_skill:fixture:member', ref: 'skill://shared_skill%3Afixture%3Amember/SKILL.md',
+const member = { id: 'skill://member?library=fixture', ref: 'skill://member/SKILL.md?library=fixture',
   kind: 'skill', name: 'shared-member', description: 'A complete shared description.', availability: 'available' };
 const currentRef = 'sr:C' + 'm'.repeat(22);
 const expectedCard = { ...member, ref: currentRef, canonical_ref: member.ref, source: 'notion-fixture', scope };
@@ -30,15 +31,15 @@ function fixture({ replaced = false, identical = false, relations = [] } = {}) {
   let cursor = content.indexOf('"records":[');
   for (const [index, record] of records.entries()) {
     const body = originals[index], snapshot = 's_' + hash('snapshot-' + index);
-    const canonical = `skill://shared_skill%3Afixture%3A${index}/SKILL.md?snapshot=${snapshot}`;
+    const owner = skillIdentity('fixture', String(index)), canonical = skillFileRef(owner, 'SKILL.md', snapshot);
     const serialized = JSON.stringify(record), offset = content.indexOf(serialized, cursor);
     const encoded = JSON.stringify(record.content).slice(1, -1);
     const start = offset + serialized.indexOf('"content":' + JSON.stringify(record.content)) + '"content":"'.length;
     const delivery = { start, end: start + encoded.length, encoding: 'json' };
     cursor = offset + serialized.length;
-    const identity = JSON.stringify(['notion-fixture', scope, 'skill', 'shared_skill', `shared_skill:fixture:${index}`]),
-      binding = { record: { id: `shared_skill:fixture:${index}`, kind: 'skill', name: record.name,
-        locator: { type: 'shared_skill' }, ref: canonical.split('?')[0] },
+    const identity = JSON.stringify(['notion-fixture', scope, 'skill', 'shared_skill', owner]),
+      binding = { record: { id: owner, kind: 'skill', name: record.name,
+        locator: { type: 'shared_skill' }, ref: skillFileRef(owner, 'SKILL.md') },
       scope, snapshot_id: snapshot, version_id: hash('version-' + index), body_sha256: hash(body), ref: canonical };
     const receipt = { version: 2, identity, contentIdentity: JSON.stringify([scope, binding.record.id]),
       loaded: !(replaced && index === 0), snapshotId: snapshot, bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery, binding,
@@ -102,7 +103,7 @@ test('description witnesses still reject missing bodies, conflicting metadata an
   const value = fixture({ relations: [['required', 'candidates']] }), authentic = bindingOracle(value);
   const mismatch = { ref: 'sr:C' + 'x'.repeat(22), id: 'other-owner', scope: 'b'.repeat(64), source: 'foreign-source',
     kind: 'router', name: 'another-name', description: 'Conflicting description.', availability: 'disabled',
-    canonical_ref: member.ref + '?snapshot=s_' + '0'.repeat(64) };
+    canonical_ref: pinSkillRef(member.ref, 's_' + '0'.repeat(64)) };
   for (const [key, wrong] of Object.entries(mismatch))
     assert.equal(generatedDescriptionEvidence([message(value)], { ...expectedCard, [key]: wrong }, authentic), undefined, key);
   assert.equal(generatedDescriptionEvidence([], expectedCard, authentic), undefined);
@@ -127,6 +128,30 @@ test('independent evidence verifier preserves authored Unicode, BOM, CRLF and li
   assert.deepEqual(result.records.map(record => record.decodedContent), bodies);
   assert.equal(JSON.stringify(value), before);
   assert.notEqual(result.records[0].mapping.source.bytes, result.records[0].mapping.rendered.bytes);
+});
+
+test('effects extend the compact envelope without weakening body proof or accepting false zero receipts', () => {
+  for (const effects of [
+    { version: 1, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
+  ]) {
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.deepEqual(verify(value).model.effects, effects);
+    assert.deepEqual(verify(value).records.map(record => record.decodedContent), bodies);
+  }
+  for (const effects of [
+    { version: 1, remote_writes: 'none' },
+    { version: 1, remote_writes: 'none', author_content: 'unknown' },
+    { version: 2, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    { version: 1, remote_writes: 'retained', author_content: 'unchanged',
+      retention: [{ skill_page_id: 'owner', file_id: 'main', operation_id: 'old', status: 'confirmed' }] },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', extra: true },
+  ]) {
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.throws(() => verify(value));
+  }
 });
 
 test('same body in two distinct records remains two independently located source spans', () => {

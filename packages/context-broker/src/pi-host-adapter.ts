@@ -2,7 +2,12 @@ import { dirname } from "node:path";
 import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
-import { DEFAULT_RESOURCE_READ_BUDGET } from "./resource-read-types";
+import { presentPiAuthorization } from "./pi-authorization";
+import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
+import { consumptionEffectsJsonSchema } from "./consumption-effects";
+import { createPiReadRenderers } from "./pi-read-renderer";
+import { loadPiNotionRenderers } from "./pi-notion-renderer";
+import { relativeReadInput } from "./native-reference";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -15,6 +20,7 @@ async function loadPiReadFactory(): Promise<PiReadFactory | undefined> {
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const resourceOutputSchema = {
   type: "object", properties: {
+    effects: consumptionEffectsJsonSchema,
     status: { const: "ready" }, files: { type: "array", items: { anyOf: [
       { type: "object", properties: { kind: { const: "text" }, ref: { type: "string" }, path: { type: "string" }, content: { type: "string" } },
         required: ["kind", "ref", "path", "content"], additionalProperties: false },
@@ -35,11 +41,30 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
-    registerReadExecutor(execute) {
+    notionToolRenderers: loadPiNotionRenderers,
+    presentAuthorization: presentPiAuthorization,
+    registerReadExecutor(execute, displayForCall) {
       const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
       if (!register || !allTools || !activeTools) return undefined;
       let installedParameters: Record<string, unknown> | undefined;
+      let sessionBound = false;
+      const registerRenderer = api.registerToolRenderer;
+      // Pi replays a resumed session before session_start. Register display
+      // decoration now; getAllTools is only available after the session binds.
+      registerRenderer?.((toolName, next) => {
+        const native = next();
+        if (toolName !== "read" || !native) return native;
+        if (sessionBound) {
+          const current = allTools().find(tool => tool.name === "read");
+          const owned = current?.sourceInfo.source === "builtin"
+            || installedParameters !== undefined && current?.parameters === installedParameters;
+          if (!owned) return native;
+        }
+        return { ...native, ...createPiReadRenderers({ native,
+          getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined }) };
+      });
       api.on("session_start", async (_event, ctx) => {
+        sessionBound = true;
         if (installedParameters) return;
         const original = allTools().find(tool => tool.name === "read");
         if (original?.sourceInfo.source !== "builtin") return;
@@ -53,30 +78,45 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
           description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
         const scalarProperties = { ...native.parameters.properties, path: {
           ...(object(native.parameters.properties.path) ? native.parameters.properties.path : { type: "string" }),
-          description: "Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.",
+          description: "Local file path (relative or absolute), an issued skill:// or sr: ref, or a supplied Notion Skill page URL. Notion main reads inspect without adopting task instructions. Copy refs verbatim; never guess filesystem paths.",
         } };
         // Providers may reject root combinators. Enforce the two exclusive modes
         // before shared preparation or native I/O, including direct tool callers.
-        const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
+        const parameters: Record<string, unknown> = { type: "object", additionalProperties: false, properties: { ...scalarProperties, paths,
+          from: { type: "string", description: "For an authored relative file link, copy the fixed sr:S/sr:R or canonical skill:// ref of the actual file containing that link. Put the original relative link or skill:// reference in path; an omitted Library binds from the containing file. Nested documents use their own resource ref, not the main Skill ref. Source-backed cross-Skill links resolve through the shared Source mapping; targets keep their own versions. Excludes paths batches and refresh:true." },
+          budget: { type: "object", additionalProperties: false, required: ["timeBudgetMs"],
+            properties: { timeBudgetMs: { type: "integer", minimum: 1, maximum: MAX_RESOURCE_READ_BUDGET.timeBudgetMs } },
+            description: "For a user-requested bounded wait on a resource paths batch only. timeBudgetMs covers the complete operation, including lookup and acquisition; default 30000, maximum 120000. File and byte limits stay unchanged. No automatic retry." },
+          refresh: { type: "boolean", description: "Use only for a user-requested current-version inspection; a successful complete read needs no follow-up refresh. Keeps the active selection unchanged. Only for a supplied Notion Skill ref in path; fixed resources and local files keep their versions." } } };
         const definition: PiReadDefinition = {
           ...native,
-          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries, comparisons or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. If the task already calls for applying a chosen Skill, call notion_use directly; it loads the root and Requires without a preliminary main read. Reuse a complete successful read. Notion reads do not write to the remote library. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
+            if (Object.hasOwn(input, "readOnly")) throw Object.assign(new Error("readOnly is not supported. Omit it; Notion reads do not write to the remote library."), { code: "INVALID_ARGUMENT" });
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
-            if (hasPath === hasPaths
-              || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
-              || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
+            // The native reader owns its options. Reject the other Notion
+            // tool's selector here without filtering native passthrough fields.
+            if (Object.hasOwn(input, "ref") || hasPath === hasPaths
+              || input.refresh !== undefined && typeof input.refresh !== "boolean"
+              || input.refresh === true && (typeof input.path !== "string" || !/^(?:skill:\/\/|sr:[CS][A-Za-z0-9_-]{22}$)/.test(input.path))
+              || hasPath && (Object.hasOwn(input, "budget") || typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
+              || hasPaths && (Object.keys(input).some(key => key !== "paths" && key !== "budget") || !Array.isArray(input.paths)
                 || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles
                 || input.paths.some(value => typeof value !== "string" || !resourceRef.test(value)))) {
               throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });
             }
+            relativeReadInput(input);
+            if (hasPaths) normalizeResourceReadBudget(input.budget);
             return execute(input, context, signal,
-              (updated, preparedSignal) => native.execute(id, updated, preparedSignal ?? signal, onUpdate, context), id);
+              (updated, preparedSignal) => {
+                const { from: _from, ...nativeInput } = updated;
+                return native.execute(id, nativeInput, preparedSignal ?? signal, onUpdate, context);
+              }, id);
           },
-          ...(native.renderCall ? { renderCall: (input, theme, context) => native.renderCall!(
-            Array.isArray(input.paths) ? { path: input.paths.join(", ") } : input, theme, context) } : {}),
+          ...(registerRenderer ? {} : createPiReadRenderers({ native,
+            getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined })),
         };
         register(definition);
         installedParameters = parameters;

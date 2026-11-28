@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { directoryInventoryPlan, reviewedDirectoryInventoryStartup, reviewedDirectoryInventoryProgram, captureDirectoryInventorySpawn } from './notion-agent-inventory-evidence.mjs';
 
 /** Passive public diagnostics in the owned Pi process. No process, stream or SDK
  * method is replaced. Raw CLI stdout is retained only in bounded memory, parsed
@@ -52,24 +53,36 @@ export function observeSourceTransport(settings) {
     unmatchedChildLifecycleVersion: 1,
     coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
-    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'files', 'consume', 'read', 'read-resources'].includes(event.operation)
+    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['library-selection', 'candidates', 'library', 'list', 'source-members', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;
+    // These are the SDK's public routing fields, not inferred configuration.
+    // Absence remains absence for older diagnostics; explicit null stays null.
+    const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => {
+      const value = event[key];
+      if (value !== null && (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)))
+        throw new Error('SDK_SOURCE_ATTRIBUTION_INVALID');
+      return [key, value];
+    }));
     if (event.event === 'start') {
       if (operations.has(requestId)) throw new Error('SDK_DUPLICATE_START');
-      operations.set(requestId, { kind: 'sdk', operation: event.operation, started: event.monotonic_ns, ended: false });
-      record('started', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, sourceMonotonicNs: event.monotonic_ns });
+      operations.set(requestId, { kind: 'sdk', operation: event.operation, started: event.monotonic_ns, attribution, ended: false });
+      record('started', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, ...attribution, sourceMonotonicNs: event.monotonic_ns });
       return;
     }
     const operation = operations.get(requestId);
     if (!operation || operation.ended || operation.operation !== event.operation || BigInt(event.monotonic_ns) < BigInt(operation.started)
       || !['completed', 'failed', 'cancelled'].includes(event.status) || typeof event.sdk_started !== 'boolean' || typeof event.metrics_observed !== 'boolean'
       || typeof event.elapsed_ms !== 'number' || !Number.isFinite(event.elapsed_ms) || event.elapsed_ms < 0) throw new Error('SDK_END_INVALID');
+    if (JSON.stringify(operation.attribution) !== JSON.stringify(attribution)) throw new Error('SDK_SOURCE_ATTRIBUTION_CHANGED');
+    if (event.error_code !== undefined && event.error_code !== null
+      && (typeof event.error_code !== 'string' || !/^[A-Z][A-Z0-9_]{0,127}$/u.test(event.error_code))) throw new Error('SDK_ERROR_CODE_INVALID');
     metrics(requestId, event.request_metrics, event.metrics_observed);
     operation.ended = true;
-    record('completed', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, status: event.status,
-      sdkStarted: event.sdk_started, sourceMonotonicNs: event.monotonic_ns, elapsedMs: event.elapsed_ms });
+    record('completed', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, ...attribution, status: event.status,
+      sdkStarted: event.sdk_started, sourceMonotonicNs: event.monotonic_ns, elapsedMs: event.elapsed_ms,
+      ...(Object.hasOwn(event, 'error_code') ? { errorCode: event.error_code } : {}) });
   });
   subscribe('tracing:child_process.spawn:start', ({ process: child, options }) => {
     const args = options?.args;
@@ -80,13 +93,15 @@ export function observeSourceTransport(settings) {
     if (!matched) {
       if (unmatched.has(child)) throw new Error('CHILD_DUPLICATE_START');
       const childId = 'child:' + process.pid + ':' + (++unmatchedChildren);
+      const inventory = settings.captureDirectoryInventorySpawn?.(options, { fs, crypto, path });
       const entry = { childId, childPid: null, closed: false };
       unmatched.set(child, entry);
       const identity = () => ({ kind: 'child', childId, parentPid: process.pid, childPid: entry.childPid });
       const hasArgs = Array.isArray(args) && args.every(value => typeof value === 'string');
       record('unmatched_child_start', { ...identity(), argumentCount: hasArgs ? args.length : null,
         argvSha256: hasArgs ? hash(JSON.stringify(args)) : null, detached: options?.detached === true,
-        executableSha256: typeof options?.file === 'string' ? hash(options.file) : null, transport: 'unknown' });
+        executableSha256: typeof options?.file === 'string' ? hash(options.file) : null, transport: 'unknown',
+        ...(inventory ? { directoryInventory: inventory.proof } : {}) });
       child.once('spawn', guarded('unmatched_child_spawn', () => {
         entry.childPid = Number.isSafeInteger(child.pid) ? child.pid : null;
         record('unmatched_child_spawn', { ...identity(), boundary: 'child-spawn-event' });
@@ -101,7 +116,8 @@ export function observeSourceTransport(settings) {
       }));
       child.once('close', guarded('unmatched_child_close', (code, signal) => {
         entry.closed = true;
-        record('unmatched_child_close', { ...identity(), code, signal, boundary: 'child-close-event' });
+        record('unmatched_child_close', { ...identity(), code, signal, boundary: 'child-close-event',
+          ...(inventory ? { directoryInventoryUnchanged: inventory.unchanged() } : {}) });
       }));
       return;
     }
@@ -165,13 +181,175 @@ export function observeSourceTransport(settings) {
   return { finish };
 }
 
-/** NODE_OPTIONS is inherited by CLI children; PID/entry/thread guards keep the
- * observer in this driver-owned Pi process without changing child environment. */
+/** Read only this process's OS ancestor chain. No command lines are requested.
+ * A second selected-PID snapshot rejects chains that changed while traversing. */
+export function captureSourceProcessAncestry({ execFileSync, stopPid, platform = process.platform }) {
+  const result = { version: 1, method: 'unix-ps-pid-ppid-lstart-v1', platform, stopPid,
+    startedNs: process.hrtime.bigint().toString(), finishedNs: null, complete: false, samples: [], confirmation: null };
+  const parse = text => text.trim().split('\n').map(line => {
+    const match = /^\s*(\d+)\s+(\d+)\s+([A-Z][a-z]{2} [A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4})\s*$/u.exec(line);
+    if (!match) throw new Error('invalid-ps-row');
+    return { pid: Number(match[1]), parentPid: Number(match[2]), startedAt: match[3].replace(/\s+/gu, ' ') };
+  });
+  const query = pids => {
+    const startedNs = process.hrtime.bigint().toString();
+    const stdout = execFileSync('/bin/ps', ['-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=', '-p', pids.join(',')],
+      { encoding: 'utf8', timeout: 1000, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
+    return { pids, startedNs, finishedNs: process.hrtime.bigint().toString(), stdout };
+  };
+  try {
+    if (!['darwin', 'linux'].includes(platform)) { result.reason = 'unsupported-platform'; return result; }
+    if (typeof execFileSync !== 'function' || !Number.isSafeInteger(stopPid) || stopPid < 1) {
+      result.reason = 'collector-unavailable'; return result;
+    }
+    const chain = [], seen = new Set(); let current = process.pid;
+    for (let depth = 0; depth < 32; depth++) {
+      if (seen.has(current) || current < 1) throw new Error('ancestor-chain-ended');
+      if (process.hrtime.bigint() - BigInt(result.startedNs) > 2000000000n) throw new Error('capture-budget-exceeded');
+      seen.add(current); const sample = query([current]); result.samples.push(sample);
+      const rows = parse(sample.stdout);
+      if (rows.length !== 1 || rows[0].pid !== current || depth === 0 && rows[0].parentPid !== process.ppid)
+        throw new Error('ancestor-identity-changed');
+      chain.push(rows[0]);
+      if (current === stopPid) break;
+      current = rows[0].parentPid;
+    }
+    if (chain.at(-1)?.pid !== stopPid) throw new Error('ancestor-anchor-unreached');
+    result.confirmation = query(chain.map(row => row.pid));
+    const confirmed = parse(result.confirmation.stdout);
+    if (confirmed.length !== chain.length || chain.some(row => !confirmed.some(other =>
+      other.pid === row.pid && other.parentPid === row.parentPid && other.startedAt === row.startedAt)))
+      throw new Error('ancestor-identity-changed');
+    result.complete = true;
+  } catch (error) {
+    result.reason = ['invalid-ps-row', 'ancestor-chain-ended', 'capture-budget-exceeded', 'ancestor-identity-changed', 'ancestor-anchor-unreached'].includes(error?.message)
+      ? error.message : 'os-query-failed';
+  } finally { result.finishedNs = process.hrtime.bigint().toString(); }
+  return result;
+}
+
+/** A child reports its own Node entry. This observes inherited NODE_OPTIONS;
+ * it neither wraps process creation nor claims coverage of other descendants. */
+export function observeSourceProcess(settings) {
+  const { fs, crypto, path, processDirectory, checkoutRoot, clockId, owner } = settings;
+  const directory = fs.realpathSync(processDirectory), root = fs.realpathSync(checkoutRoot);
+  const relative = path.relative(root, directory);
+  if (!path.isAbsolute(processDirectory) || relative === '' || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+    throw new Error('SOURCE_PROCESS_EVIDENCE_MUST_BE_OUTSIDE_CHECKOUT');
+  const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+  const fileIdentity = file => {
+    const realpath = fs.realpathSync(file), fd = fs.openSync(realpath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    try {
+      const before = fs.fstatSync(fd);
+      if (!before.isFile() || before.size > 64 * 1024 * 1024) throw new Error('ENTRY_UNREADABLE');
+      const bytes = fs.readFileSync(fd), after = fs.fstatSync(fd);
+      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || bytes.length !== after.size)
+        throw new Error('ENTRY_CHANGED');
+      return { path: path.resolve(file), realpath, sha256: hash(bytes), bytes: bytes.length };
+    } finally { fs.closeSync(fd); }
+  };
+  const capture = () => {
+    // node -e may put an arbitrary filename in argv[1]. It is not a file entry.
+    if (process.execArgv.some(arg => /^(?:-e|-p|-c|--eval(?:=|$)|--print(?:=|$)|--check$|--test$|--run(?:=|$))/.test(arg)))
+      return { entryMode: 'non-file', entry: null, cli: null };
+    if (typeof process.argv[1] !== 'string' || process.argv[1] === '-') return { entryMode: 'unknown', entry: null, cli: null };
+    try {
+      const entry = fileIdentity(process.argv[1]);
+      let cli = /^ntn-skills\.(?:mjs|cjs|js)$/.test(path.basename(entry.realpath)) ? { basis: 'entry-name' } : null;
+      let parent = path.dirname(entry.realpath);
+      for (let depth = 0; depth < 4; depth++) {
+        const manifestPath = path.join(parent, 'package.json');
+        if (fs.existsSync(manifestPath)) {
+          const bytes = fs.readFileSync(manifestPath);
+          if (bytes.length > 1024 * 1024) break;
+          const manifest = JSON.parse(bytes.toString('utf8'));
+          const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.['ntn-skills'];
+          if (manifest.name === 'ntn-skills' && typeof bin === 'string' && fs.realpathSync(path.resolve(parent, bin)) === entry.realpath)
+            cli = { basis: 'package-bin', manifest: fileIdentity(manifestPath) };
+          break;
+        }
+        const next = path.dirname(parent); if (next === parent) break; parent = next;
+      }
+      return { entryMode: 'file', entry, cli };
+    } catch { return { entryMode: 'unknown', entry: null, cli: null }; }
+  };
+  const processId = process.pid + '-' + crypto.randomUUID();
+  const file = path.join(directory, 'process-' + processId + '.jsonl');
+  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+  fs.fchmodSync(fd, 0o600);
+  let sequence = 0, previous = null, closed = false;
+  const record = (phase, details) => {
+    const row = { version: 1, sequence: ++sequence, previousSha256: previous, clockId,
+      monotonicNs: process.hrtime.bigint().toString(), phase, processId, pid: process.pid, parentPid: process.ppid, ...details };
+    row.eventSha256 = hash(JSON.stringify(row)); previous = row.eventSha256;
+    fs.writeSync(fd, JSON.stringify(row) + '\n');
+  };
+  const initial = capture();
+  const args = process.argv.slice(2);
+  const invocation = initial.cli === null ? undefined : { version: 1, argvSha256: hash(JSON.stringify(args)),
+    arguments: args.map(value => {
+      const separator = value.startsWith('--') ? value.indexOf('=') : -1;
+      return { sha256: hash(value), option: value.startsWith('-'),
+        inline: separator < 0 ? null : { nameSha256: hash(value.slice(0, separator)), valueSha256: hash(value.slice(separator + 1)) } };
+    }) };
+  record('process_start', { owner: owner === true, node: process.versions.node, ...initial,
+    ...(invocation === undefined ? {} : { invocation }),
+    osAncestry: captureSourceProcessAncestry({ execFileSync: settings.execFileSync, stopPid: settings.ownerParentPid }) });
+  const finish = code => {
+    if (closed) return;
+    try { record('process_end', { exitCode: code, ...capture() }); }
+    catch { /* A missing terminal stays incomplete evidence. */ }
+    finally { closed = true; process.off('exit', finish); try { fs.closeSync(fd); } catch {} }
+  };
+  process.once('exit', finish);
+  return { file, finish };
+}
+
+/** Resolve an actual Node file entry through its nearest package's public bin.
+ * A wrapper's text or a directory name is never package identity. */
+export function identifySourcePackageEntry({ fs, crypto, path, packageName, binName, entry = process.argv[1] }) {
+  if (typeof entry !== 'string' || process.execArgv.some(arg => /^(?:-e|-p|-c|--eval(?:=|$)|--print(?:=|$)|--check$|--test$|--run(?:=|$))/.test(arg))) return null;
+  const identity = file => {
+    const canonical = fs.realpathSync(file), bytes = fs.readFileSync(canonical);
+    return { path: path.resolve(file), realpath: canonical, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+  };
+  try {
+    const actual = identity(entry);
+    let root = path.dirname(actual.realpath);
+    for (let depth = 0; depth < 8; depth++) {
+      const manifestPath = path.join(root, 'package.json');
+      if (fs.existsSync(manifestPath)) {
+        const manifest = identity(manifestPath);
+        if (manifest.bytes > 1024 * 1024) return null;
+        const manifestBytes = fs.readFileSync(manifestPath);
+        if (crypto.createHash('sha256').update(manifestBytes).digest('hex') !== manifest.sha256) return null;
+        const metadata = JSON.parse(manifestBytes.toString('utf8'));
+        const bin = metadata.bin?.[binName];
+        if (metadata.name !== packageName || typeof metadata.version !== 'string' || !metadata.version
+          || typeof bin !== 'string' || fs.realpathSync(path.resolve(root, bin)) !== actual.realpath) return null;
+        return { entry: actual, package: { name: metadata.name, version: metadata.version, root, manifest, bin: binName, entry_realpath: actual.realpath } };
+      }
+      const next = path.dirname(root); if (next === root) break; root = next;
+    }
+  } catch { /* Unreadable or unmatched package identity remains unknown. */ }
+  return null;
+}
+
+/** The transport observer stays in the driver-owned Pi. Optional per-process
+ * identity records include real Node descendants without changing their env. */
 export function sourceObserverPreloadSource(settings) {
-  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\n"
+  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\nimport {execFileSync} from 'node:child_process';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
-    + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry); } catch {}\n'
-    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n';
+    + 'const identifyPackageEntry = (' + identifySourcePackageEntry.toString() + ');\n'
+    + 'const directoryInventoryPlan = (' + directoryInventoryPlan.toString() + ');\n'
+    + 'const reviewedDirectoryInventoryStartup = (' + reviewedDirectoryInventoryStartup.toString() + ');\n'
+    + 'const reviewedDirectoryInventoryProgram = (' + reviewedDirectoryInventoryProgram.toString() + ');\n'
+    + 'const captureDirectoryInventorySpawn = (' + captureDirectoryInventorySpawn.toString() + ');\n'
+    + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && (settings.ownerPackage ? Boolean(identifyPackageEntry({...settings.ownerPackage,fs,crypto,path})) : fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry)); } catch {}\n'
+    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics,captureDirectoryInventorySpawn} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
+    + 'const captureSourceProcessAncestry = (' + captureSourceProcessAncestry.toString() + ');\n'
+    + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,execFileSync,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';
 }
 
 /** Invalid or partial observations remain available to the driver, but never
@@ -179,6 +357,11 @@ export function sourceObserverPreloadSource(settings) {
 export async function readSourceObservation(file, { final = true } = {}) {
   let text;
   try { text = await readFile(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return { events: [], complete: false, errors: ['missing-observer'] }; throw error; }
+  return parseSourceObservation(text, { final });
+}
+
+/** Revalidate already sealed parent evidence without rereading a mutable file. */
+export function parseSourceObservation(text, { final = true } = {}) {
   const errors = [], events = [];
   if (text && !text.endsWith('\n')) errors.push('truncated-line');
   const lines = text.split('\n'); lines.pop();
@@ -243,11 +426,21 @@ export async function readSourceObservation(file, { final = true } = {}) {
       }
     } else if (event.phase === 'started') {
       if (!['cli', 'sdk'].includes(event.kind) || typeof event.requestId !== 'string' || operations.has(event.requestId)) errors.push('duplicate-or-invalid-start');
-      operations.set(event.requestId, { kind: event.kind, completed: 0, metrics: 0, attempts: new Set() });
+      const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+      if (event.kind === 'sdk' && Object.values(attribution).some(value => value !== null &&
+        (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value))))
+        errors.push('invalid-sdk-source-attribution');
+      operations.set(event.requestId, { kind: event.kind, attribution, completed: 0, metrics: 0, attempts: new Set() });
     } else if (['metrics', 'completed', 'attempt', 'wait', 'child-started', 'stdout_unobserved', 'spawn_error'].includes(event.phase)) {
       const operation = operations.get(event.requestId);
       if (!operation || operation.completed) errors.push('unpaired-operation-event');
-      if (event.phase === 'completed' && operation) { operation.completed++; if (event.kind !== operation.kind) errors.push('changed-operation-kind'); }
+      if (event.phase === 'completed' && operation) {
+        operation.completed++;
+        if (event.kind !== operation.kind) errors.push('changed-operation-kind');
+        const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+        if (operation.kind === 'sdk' && JSON.stringify(attribution) !== JSON.stringify(operation.attribution))
+          errors.push('changed-sdk-source-attribution');
+      }
       if (event.phase === 'attempt' && operation) {
         if (event.kind !== 'http' || !Number.isSafeInteger(event.attempt) || event.attempt < 1 || operation.attempts.has(event.attempt)) errors.push('invalid-attempt');
         operation.attempts.add(event.attempt);

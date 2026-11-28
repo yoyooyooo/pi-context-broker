@@ -7,48 +7,75 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish or repair, for example v0.1.2
+        description: Already published immutable stable tag to verify and repair
         required: true
         type: string
 
-
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: npm-publish-pi-context-broker
+  cancel-in-progress: false
 
 jobs:
   main:
     runs-on: ubuntu-latest
     environment: npm-publish
+    outputs:
+      verified_artifact: ${{ steps.release_inputs.outputs.artifact }}
+    permissions:
+      contents: read
+      id-token: write
     env:
       NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
+      CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
+      - name: Select frozen CLI input
+        id: cli-input
+        run: echo "revision=$(cat .github/ntn-skills-cli-revision)" >> "$GITHUB_OUTPUT"
       - name: Checkout pinned CLI SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 97ba806db80a842cd33d7327e99745d32b476e97
+          ref: ${{ steps.cli-input.outputs.revision }}
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.20.0
+          node-version: 26.13.1
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Install supported npm
+        run: npm install --global npm@12.2.3 --registry https://registry.npmjs.org
+      - name: Validate release source
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          release_tag="${REQUESTED_TAG:-$GITHUB_REF_NAME}"
+          mode=new
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            mode=repair
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != "refs/tags/$release_tag" ]; then
+            echo "Repair must be dispatched on its immutable tag ref." >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/broker-release"
+          node scripts/release-evidence.mjs source "$release_tag" "$mode" "$GITHUB_WORKSPACE/.verification/ntn-skills-cli" "$RUNNER_TEMP/broker-release/source.json"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=pi-context-broker" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=${release_tag#v}" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build pinned CLI SDK
@@ -56,108 +83,40 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run build
-      - name: Install pinned CLI hosts
-        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0
-      - name: Validate release metadata
-        run: |
-          release_tag="${{ github.event.inputs.tag }}"
-          if [ -z "$release_tag" ]; then
-            release_tag="${GITHUB_REF_NAME}"
-          fi
-          package_name="$(node -p "require('./packages/context-broker/package.json').name")"
-          package_version="$(node -p "require('./packages/context-broker/package.json').version")"
-          expected_tag="v${package_version}"
-          if [ "$package_name" != "pi-context-broker" ]; then
-            echo "Expected package name pi-context-broker, got: $package_name" >&2
-            exit 1
-          fi
-          if [ "$release_tag" != "$expected_tag" ]; then
-            echo "Release tag must match package version. tag=$release_tag expected=$expected_tag" >&2
-            exit 1
-          fi
-          echo "PACKAGE_NAME=$package_name" >> "$GITHUB_ENV"
-          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
-          if npm view "${package_name}@${package_version}" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
-            echo "NPM_ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
-            echo "${package_name}@${package_version} already exists on npm."
-          else
-            echo "NPM_ALREADY_PUBLISHED=false" >> "$GITHUB_ENV"
-          fi
-      - name: Check
-        run: bun run check
+      - name: Check current Broker
+        run: bun run check:broker
       - name: Release policy regression
         run: node --test scripts/release.test.mjs
-      - name: Native CLI host regressions
-        id: native-hosts
-        run: |
-          node packages/context-broker/scripts/context-broker-host-e2e.mjs
-          node packages/context-broker/scripts/context-broker-global-config-e2e.mjs
-          node packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs
-      - name: Preserve failed native host evidence
-        if: failure() && steps.native-hosts.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-host-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            /tmp/context-broker-host-e2e-*/
-            /tmp/context-broker-config-e2e-*/
-            /tmp/context-broker-lifecycle-e2e-*/
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Create controlled SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
-      - name: Create controlled name SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-name-fixture" --catalog --distinct-names
-      - name: Create controlled ambiguity SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-ambiguity-fixture" --catalog --ambiguous-names
-      - name: Installed Pi artifact regression
-        run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"
-      - name: Preserve installed Pi SDK evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: installed-pi-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            /tmp/broker-artifacts-*/
-            /tmp/notion-sdk-pi-*/
-            ${{ runner.temp }}/ntn-skills-sdk-fixture/
-            ${{ runner.temp }}/ntn-skills-name-fixture/
-            ${{ runner.temp }}/ntn-skills-ambiguity-fixture/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Installed OMP and Tern artifact regression
-        run: node scripts/verify-artifacts.mjs --host omp
       - name: Package release artifacts
-        run: bun scripts/pack.mjs
-      - name: Publish
-        working-directory: packages/context-broker
+        run: bun scripts/pack.mjs --target broker --out-dir "$RUNNER_TEMP/broker-release"
+      - name: Select release archive
         run: |
-          if [ "${NPM_ALREADY_PUBLISHED:-false}" = "true" ]; then
-            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on npm; skipping npm publish."
+          shopt -s nullglob
+          archives=("$RUNNER_TEMP/broker-release/"*.tgz)
+          test "${#archives[@]}" -eq 1
+          echo "TARBALL=${archives[0]}" >> "$GITHUB_ENV"
+      - name: Create current SDK fixture
+        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog
+      - name: Installed current SDK consumption
+        run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --archive "$TARBALL" --report "$RUNNER_TEMP/broker-release/installed.json"
+      - name: Record the checked candidate
+        run: node scripts/release-evidence.mjs candidate "$RUNNER_TEMP/broker-release/source.json" "$TARBALL" "$RUNNER_TEMP/broker-release/installed.json" "$RUNNER_TEMP/broker-release/candidate.json"
+      - name: Reconcile npm presence
+        run: node scripts/release-evidence.mjs presence "$RUNNER_TEMP/broker-release/candidate.json" "$RUNNER_TEMP/broker-release/presence.json"
+      - name: Publish the checked archive
+        run: |
+          already_published="$(node -p "require(process.argv[1]).alreadyPublished" "$RUNNER_TEMP/broker-release/presence.json")"
+          if [ "$already_published" = true ]; then
+            echo "The exact archive already exists; continuing readback without republishing."
             exit 0
           fi
-          npm publish --registry https://registry.npmjs.org --access public --provenance
-      - name: Verify npm package
-        run: |
-          for attempt in 1 2 3 4 5 6; do
-            if published_version="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org 2>/tmp/npm-view.err)"; then
-              if [ "$published_version" = "$PACKAGE_VERSION" ]; then
-                exit 0
-              fi
-              echo "npm registry version mismatch. got=$published_version expected=$PACKAGE_VERSION" >&2
-              exit 1
-            fi
-            if [ "$attempt" = "6" ]; then
-              cat /tmp/npm-view.err >&2
-              exit 1
-            fi
-            sleep "$((attempt * 5))"
-          done
+          test "$already_published" = false
+          npm publish "$TARBALL" --ignore-scripts --registry https://registry.npmjs.org --access public --provenance --tag latest
+      - name: Verify registry, cold install, and provenance
+        run: node scripts/release-evidence.mjs verify "$RUNNER_TEMP/broker-release/candidate.json" "$RUNNER_TEMP/broker-release/presence.json" "$RUNNER_TEMP/broker-release/registry.json"
       - name: Generate release notes
         run: |
-          git fetch --tags --force
+          git fetch --tags
           node <<'NODE'
           const { execFileSync } = require("node:child_process");
           const { writeFileSync } = require("node:fs");
@@ -267,12 +226,64 @@ jobs:
           }
           writeFileSync("release-notes.md", lines.join("\n"));
           NODE
-      - name: Create GitHub Release
+      - name: Preserve current SDK results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installed-current-sdk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/broker-artifacts-*/
+            ${{ runner.temp }}/ntn-skills-current-fixture/
+            ${{ runner.temp }}/broker-release/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stage verified release inputs
+        id: release_inputs
         run: |
-          export GH_TOKEN="${{ github.token }}"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md
-          else
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md --verify-tag
-          fi
-          gh release upload "$RELEASE_TAG" dist/tern-context-broker.tar.gz --clobber
+          mkdir "$RUNNER_TEMP/release-upload"
+          cp "$TARBALL" "$RUNNER_TEMP/broker-release/candidate.json" "$RUNNER_TEMP/broker-release/registry.json" release-notes.md "$RUNNER_TEMP/release-upload/"
+          echo "artifact=verified-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Preserve verified release inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.release_inputs.outputs.artifact }}
+          path: ${{ runner.temp }}/release-upload/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Download verified release inputs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.main.outputs.verified_artifact }}
+          path: verified-release
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - name: Create or repair GitHub Release after registry verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          archive="verified-release/pi-context-broker-${RELEASE_TAG#v}.tgz"
+          node scripts/release-evidence.mjs github-release verified-release/candidate.json verified-release/registry.json verified-release/release-notes.md "$archive"
+      - name: Preserve GitHub reconciliation results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: github-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verified-release/*.github-commands.json
+          if-no-files-found: warn
+          retention-days: 7

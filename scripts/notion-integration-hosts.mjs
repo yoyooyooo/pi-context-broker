@@ -1,26 +1,5 @@
 import assert from 'node:assert/strict';
-
-/** Host selection belongs to verification orchestration, not the source adapter.
- * A Pi-only run must neither probe nor launch an unrelated installed host.
- * Cross-host cache and native-editor scenarios remain explicitly multi-host.
- */
-export function selectIntegrationHosts({ host, sharedCatalog = false, cacheLifecycle = false }) {
-  if (host !== undefined && !['pi', 'omp'].includes(host)) {
-    throw new Error('--host must be pi or omp; omit it to run both hosts');
-  }
-  if (host !== undefined && (sharedCatalog || cacheLifecycle)) {
-    throw new Error('--host cannot narrow shared-catalog or cache-lifecycle: those scenarios require multiple hosts');
-  }
-  return host === undefined ? ['pi', 'omp'] : [host];
-}
-
-/** Preserve the default policy unless a run explicitly selects the daily mode. */
-export function selectIntegrationPrefetch(value) {
-  if (value === undefined) return undefined;
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  throw new Error('--prefetch must be true or false');
-}
+import { parseNativeReference, hasExactNativeOwner, bindNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
 export function decodeCatalogText(value) {
   const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -28,17 +7,14 @@ export function decodeCatalogText(value) {
 }
 
 /** Select the owner of the supplied ref; the public read still validates its pin. */
-export function selectLiveCatalogRecord(records, ref) {
-  const owner = value => {
-    const match = /^skill:\/\/([^/]+)\//u.exec(value ?? '');
-    assert.ok(match, 'A public Skill ref with an owner and path is required');
-    return decodeURIComponent(match[1]);
-  };
-  const target = owner(ref);
-  const uuid = value => typeof value === 'string' && /^(?:[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/iu.test(value) ? value.replaceAll('-', '').toLowerCase() : undefined;
-  const exact = records.filter(record => record.id === target || record.ref === ref || owner(record.ref) === target
-    || uuid(target) !== undefined && [record.locator?.page_id, record.locator?.subscription_id].some(id => uuid(id) === uuid(target)));
-  const matches = exact.length ? exact : records.filter(record => record.name === target || record.alias === target);
+export function selectLiveCatalogRecord(records, ref, libraryId) {
+  let target = parseNativeReference(ref);
+  if (!hasExactNativeOwner(target)) {
+    assert.ok(typeof libraryId === 'string', 'A contextual stable ID requires an explicitly bound Library');
+    target = bindNativeReference(target, libraryId);
+  }
+  const matches = records.filter(record => record.locator?.type === 'shared_skill'
+    && record.id === target.selector && parseNativeReference(record.ref).selector === target.selector);
   assert.equal(matches.length, 1, 'Requested real Skill owner must match exactly one selected catalog record');
   return matches[0];
 }
@@ -59,10 +35,8 @@ export function projectedResourceRef(context, name, path) {
 }
 
 export function measuredConsumptionArgs(args) {
-  const prepare = args[0] === 'prepare' || args[0] === 'ctl' && args[1] === 'prepare';
-  const measured = prepare || ['list', 'read', 'files', 'use'].includes(args[0]);
-  if (!measured || args.includes('--raw')) return args;
-  // prepare is already a machine protocol and has no --json flag. use needs
-  // explicit JSON for metrics; the other consumer commands support it as well.
-  return [...args, ...(prepare || args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
+  if (args[0] === 'prepare' || args[0] === 'ctl' && args[1] === 'prepare')
+    throw new Error('The prepare protocol is retired; select current content with use.');
+  if (!['list', 'read', 'files', 'use'].includes(args[0]) || args.includes('--raw')) return args;
+  return [...args, ...(args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
 }

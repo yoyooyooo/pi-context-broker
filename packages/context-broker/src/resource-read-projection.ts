@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseNativeReference } from "./native-reference";
 import type { NativeReadResult } from "./types";
+import { isConsumptionEffects, type ConsumptionEffects } from "./consumption-effects.ts";
 
 export const RESOURCE_READ_COMPILER = "context-broker/resource-read/v1" as const;
 export type ResourceReadSelection = { scope: string; owner: string; snapshot_id: string; version_id: string };
@@ -10,7 +11,7 @@ export type ResourceReadBodySpan = { start: number; end: number; encoding: "json
 export type ResourceReadModelFile =
   | { kind: "text"; ref: string; path: string; content: string }
   | { kind: "binary"; ref: string; path: string; bytes: number; sha256: string; output: string };
-export type ResourceReadModel = { status: "ready"; files: readonly ResourceReadModelFile[] };
+export type ResourceReadModel = { status: "ready"; files: readonly ResourceReadModelFile[]; effects?: ConsumptionEffects };
 export type ResourceReadSourceFile = {
   requested_ref: string; ref: string; file_id?: string; path: string; bytes: number; sha256: string;
   encoding: "utf8" | "base64"; content: string; output?: string;
@@ -21,6 +22,7 @@ export type ResourceReadProofFile = Omit<ResourceReadSourceFile, "content"> & {
 };
 export type ResourceReadProof = {
   version: 2; toolCallId: string; loaded: false; selection: ResourceReadSelection;
+  purpose?: "inspect";
   files: readonly ResourceReadProofFile[];
   projection: {
     version: 1; compiler: typeof RESOURCE_READ_COMPILER; rendered: { sha256: string; bytes: number };
@@ -40,7 +42,8 @@ function invalid(): never {
 }
 
 export function isResourceReadModel(value: unknown): value is ResourceReadModel {
-  if (!object(value) || !keys(value, ["status", "files"]) || value.status !== "ready"
+  if (!object(value) || !keys(value, ["status", "files", "effects"]) || value.status !== "ready"
+    || value.effects !== undefined && !isConsumptionEffects(value.effects)
     || !Array.isArray(value.files) || !value.files.length || value.files.length > 64) return false;
   return value.files.every(file => {
     if (!object(file) || !nonempty(file.ref) || !nonempty(file.path)) return false;
@@ -70,7 +73,7 @@ export function renderResourceReadModel(model: ResourceReadModel): { content: st
       content += ',"bytes":' + file.bytes + ',"sha256":' + JSON.stringify(file.sha256) + ',"output":' + JSON.stringify(file.output) + "}";
     }
   }
-  return { content: content + "]}", bodySpans };
+  return { content: content + "]" + (model.effects === undefined ? "" : ',"effects":' + JSON.stringify(model.effects)) + "}", bodySpans };
 }
 
 function parsedModel(text: string) {
@@ -85,7 +88,8 @@ function parsedModel(text: string) {
 /** Validate bytes from the actual tool text. A resource receipt never grants a
  * main-body delivery, prepared graph, or active session binding. */
 export function validateResourceReadProjection(text: string, value: unknown): ResourceReadProof | undefined {
-  if (!object(value) || !keys(value, ["version", "toolCallId", "loaded", "selection", "files", "projection"])
+  if (!object(value) || !keys(value, ["version", "toolCallId", "loaded", "selection", "files", "projection", "purpose"])
+    || value.purpose !== undefined && value.purpose !== "inspect"
     || value.version !== 2 || !nonempty(value.toolCallId) || value.loaded !== false || !object(value.selection)
     || !keys(value.selection, ["scope", "owner", "snapshot_id", "version_id"])
     || !nonempty(value.selection.scope) || !nonempty(value.selection.owner) || !sha(value.selection.version_id)
@@ -111,10 +115,9 @@ export function validateResourceReadProjection(text: string, value: unknown): Re
     try {
       const ref = parseNativeReference(item.ref), requested = parseNativeReference(item.requested_ref);
       if (ref.selector !== value.selection.owner || ref.snapshot !== value.selection.snapshot_id
-        || ref.path !== file.path || ref.fileId !== item.file_id
+        || ref.path !== file.path
         || requested.selector !== ref.selector || requested.snapshot !== ref.snapshot
-        || requested.fileId !== undefined && requested.fileId !== ref.fileId
-        || requested.fileId === undefined && requested.path !== ref.path
+        || requested.path !== ref.path
         || file.ref !== item.ref && !/^sr:R[A-Za-z0-9_-]{22}$/.test(file.ref)) return undefined;
     } catch { return undefined; }
     paths.add(file.path);
@@ -134,7 +137,7 @@ export function validateResourceReadProjection(text: string, value: unknown): Re
 
 export function compileResourceRead(input: {
   toolCallId: string; batch: { selection: ResourceReadSelection; files: readonly ResourceReadSourceFile[] };
-  modelRefs: readonly string[]; maxContextBytes: number;
+  modelRefs: readonly string[]; maxContextBytes: number; effects?: ConsumptionEffects; purpose?: "inspect";
 }): NativeReadResult & { structuredContent: ResourceReadModel; details: { contextBrokerResource: ResourceReadProof } } {
   if (!nonempty(input.toolCallId) || input.modelRefs.length !== input.batch.files.length
     || !Number.isSafeInteger(input.maxContextBytes) || input.maxContextBytes <= 0) invalid();
@@ -148,7 +151,7 @@ export function compileResourceRead(input: {
     if (file.encoding !== "base64" || bytes.toString("base64") !== file.content || bytes.length !== file.bytes
       || hash(bytes) !== file.sha256 || !file.output || !isAbsolute(file.output)) invalid();
     return { kind: "binary", ref: input.modelRefs[index]!, path: file.path, bytes: file.bytes, sha256: file.sha256, output: file.output };
-  }) };
+  }), ...(input.effects === undefined ? {} : { effects: input.effects }) };
   const rendered = renderResourceReadModel(model);
   if (Buffer.byteLength(rendered.content) > input.maxContextBytes) {
     throw Object.assign(new Error("The complete resource result exceeds the model context byte budget"), {
@@ -157,6 +160,7 @@ export function compileResourceRead(input: {
   }
   const proof: ResourceReadProof = {
     version: 2, toolCallId: input.toolCallId, loaded: false, selection: { ...input.batch.selection },
+    ...(input.purpose ? { purpose: input.purpose } : {}),
     files: input.batch.files.map(({ content: _content, ...file }, index) => ({ ...file, index, model_ref: input.modelRefs[index]!,
       loaded: false, delivered_complete_text: file.encoding === "utf8", state: file.encoding === "utf8" ? "source" : "binary",
       ...(rendered.bodySpans[index] ? { delivery: rendered.bodySpans[index] } : {}) })),

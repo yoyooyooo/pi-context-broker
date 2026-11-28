@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { captureInjectionReceipts } from './skill-preparation-evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -12,8 +13,8 @@ const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value
 const unique = values => [...new Set(values)];
 const sum = values => values.every(finite) ? values.reduce((a, b) => a + b, 0) : null;
 
-/** Pi 1.4 observer. This function is deliberately self-contained so an owned Pi
- * process can install its source without a dependency on this repository.
+/** Passive Pi hook observer. This function and the existing receipt collector are emitted
+ * together so an owned Pi process needs no runtime dependency on this repository.
  *
  * The driver supplies Node fs/crypto/path, an existing external output directory,
  * and a clockId shared with its process.hrtime.bigint() submission receipt.
@@ -67,12 +68,14 @@ export function observeConsumptionCost(api, settings) {
         ? Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'total'].map(key => [key, value.cost[key] ?? null])) : null };
   };
   const assistant = message => {
-    const text = textContent(message?.content);
+    const text = textContent(message?.content), responseModel = modelField(message?.responseModel);
     return { role: message?.role === 'assistant' ? 'assistant' : 'other', content: jsonMeasure(message?.content),
       text: textMeasure(text), nonWhitespaceText: text.trim().length > 0,
       permissionOnly: text.length < 1200 && /(?:please\s+(?:approve|authorize|confirm)|(?:need|require|await)\w*\s+(?:your\s+)?(?:approval|permission)|(?:请|需要|等待).{0,15}(?:授权|批准|确认))/iu.test(text),
       stopReason: ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(message?.stopReason) ? message.stopReason : null,
-      provider: modelField(message?.provider), model: modelField(message?.model), responseModel: modelField(message?.responseModel),
+      provider: modelField(message?.provider), model: modelField(message?.model), api: modelField(message?.api),
+      responseId: modelField(message?.responseId), rawStopReason: modelField(message?.rawStopReason), responseModel,
+      responseModelStatus: message?.responseModel == null ? 'unreported' : responseModel === null ? 'invalid' : 'reported',
       thinkingLevel: modelField(message?.thinkingLevel), providerThinkingLevel: modelField(message?.providerThinkingLevel),
       usage: usage(message?.usage) };
   };
@@ -154,15 +157,24 @@ export function observeConsumptionCost(api, settings) {
       for (const [kind, proof] of [['skill-body', details.contextBrokerRead], ['resource', details.contextBrokerResource]]) {
         if (!proof || proof.toolCallId !== message.toolCallId) continue;
         if (kind === 'resource') {
-          if (proof.version === 2) {
+          if (proof.version === 2 && ['files', 'selection', 'projection'].some(key => Object.hasOwn(proof, key))) {
             for (const file of resourceBatchFiles(proof, text)) rememberBody(bodyAt(text, file.delivery), file, kind);
             continue;
           }
-          if (proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+          if (![1, 2].includes(proof.version) || proof.delivered_complete_text !== true || proof.loaded !== false
             || ![proof.scope, proof.id, proof.ref, proof.path].every(nonempty) || !pinned(proof.snapshot_id)) continue;
+          // Scalar v2 names the untouched source prefix before an effects footer;
+          // batch v2 above keeps its separate complete projection contract.
+          if (proof.version === 2) {
+            const native = Array.isArray(message.content) && message.content.length >= 2 ? textContent(message.content.slice(0, -1)) : undefined;
+            const footer = details.effects?.version === 1 ? '\n\n<notion-effects>' + JSON.stringify(details.effects) + '</notion-effects>' : undefined;
+            if (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw' || typeof native !== 'string'
+              || proof.delivery.end !== native.length || footer === undefined || message.content.at(-1)?.text !== footer) continue;
+          }
         } else if (![1, 2, 3].includes(proof.version) || !nonempty(proof.identity) || !pinned(proof.snapshotId)
           || proof.version === 3 && (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw')) continue;
-        rememberBody(kind === 'skill-body' && proof.version === 3 ? bodyAt(text, proof.delivery) : text, proof, kind);
+        const spanned = kind === 'skill-body' && proof.version === 3 || kind === 'resource' && proof.version === 2;
+        rememberBody(spanned ? bodyAt(text, proof.delivery) : text, proof, kind);
       }
     }
   };
@@ -222,20 +234,40 @@ export function observeConsumptionCost(api, settings) {
       diagnosticSpans: spans, verifiedBodyOccurrences: bodies, diagnosticMethod: 'nonadditive-content-spans-and-receipt-verified-exact-matches', tokens: null,
       tokenMethod: 'per-component-tokenization-unavailable-use-reported-request-usage' };
   };
-  const on = (phase, handle) => api.on(phase, (event, context) => {
-    if (closed) return;
-    const started = clock();
-    try { handle(event, context); }
-    catch {
-      errors++;
-      try { append('observer_error', { observedPhase: phase }); } catch { /* Evidence is incomplete; the product proceeds unchanged. */ }
-    } finally { workNs += clock() - started; }
-    // Returning undefined preserves every transforming/cancellable hook's input.
-  });
+  const handlers = [], unsubscribers = [], seenApis = new WeakSet();
+  let boundApi, binding = 0, pendingForkRebind = false;
+  const on = (phase, handle) => handlers.push([phase, handle]);
+  const detach = () => {
+    boundApi = undefined;
+    for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
+  };
+  const bind = nextApi => {
+    if (closed) throw new Error('COST_OBSERVER_CLOSED');
+    if (boundApi === nextApi) return;
+    if (binding && (!pendingForkRebind || seenApis.has(nextApi))) throw new Error('COST_OBSERVER_REBIND_WITHOUT_FORK');
+    const prior = binding; boundApi = nextApi; seenApis.add(nextApi); binding++; pendingForkRebind = false;
+    for (const [phase, handle] of handlers) {
+      const unsubscribe = nextApi.on(phase, (event, context) => {
+        if (closed || boundApi !== nextApi) return;
+        const started = clock();
+        try { handle(event, context); }
+        catch {
+          errors++;
+          try { append('observer_error', { observedPhase: phase }); } catch { /* Evidence is incomplete; the product proceeds unchanged. */ }
+        } finally { workNs += clock() - started; }
+        // Returning undefined preserves every transforming/cancellable hook's input.
+      });
+      if (typeof unsubscribe === 'function') unsubscribers.push(unsubscribe);
+    }
+    if (prior) append('observer_rebind', { reason: 'fork', binding });
+  };
   const finish = () => {
     if (closed) return;
-    try { append('observer_end', { complete: errors === 0, errors, priorEventCount: sequence,
-      observedPhases: [...phases], observerWorkMs: Number(workNs) / 1e6 }); }
+    try {
+      detach();
+      append('observer_end', { complete: errors === 0 && !pendingForkRebind, errors, priorEventCount: sequence,
+        pendingForkRebind, observedPhases: [...phases], observerWorkMs: Number(workNs) / 1e6 });
+    }
     finally { closed = true; fs.closeSync(fd); }
   };
   append('observer_start', { clockMethod: 'node-process-hrtime-bigint', contentPolicy: 'content-hash-and-byte-counts-with-actual-model-identifiers',
@@ -244,14 +276,20 @@ export function observeConsumptionCost(api, settings) {
     text: textMeasure(String(event.text ?? '')), images: jsonMeasure(event.images ?? []), imageCount: Array.isArray(event.images) ? event.images.length : 0,
     method: 'input-at-observer-hook-position-driver-retains-original-submission' }); });
   on('agent_start', () => append('agent_start', { turn }));
-  for (const phase of ['context', 'context_with_system']) on(phase, event => {
-    remember(event.messages); append(phase, { turn, messages: jsonMeasure(event.messages),
+  for (const phase of ['context', 'context_with_system']) on(phase, (event, context) => {
+    const messages = event.messages ?? [];
+    const inherited = captureInjectionReceipts(messages, context?.sessionManager?.buildSessionProjection?.()).persisted;
+    // Machine receipts stay in memory; remember still binds them to actual user
+    // text and verifies the original pin, complete span, hash and byte count.
+    remember([...messages, ...inherited.map(({ data }) => ({ role: 'custom', customType: 'context-broker', content: '', details: data }))]);
+    append(phase, { turn, messages: jsonMeasure(event.messages),
       components: (event.messages ?? []).map(message => ({ role: ['system', 'user', 'assistant', 'toolResult', 'custom'].includes(message.role) ? message.role : 'other',
         content: jsonMeasure(message.content) })), method: phase === 'context_with_system' ? 'post-context-hooks-with-system' : 'at-observer-context-hook-position' });
   });
   on('before_provider_request', (event, context) => append('provider_request', { turn, request: ++request,
-    provider: modelField(context?.model?.provider), model: modelField(context?.model?.id),
-    requestModel: modelField(event.payload?.model), reasoningEffort: modelField(event.payload?.reasoning_effort), payload: payload(event.payload) }));
+    provider: modelField(context?.model?.provider), model: modelField(context?.model?.id), api: modelField(context?.model?.api),
+    requestModel: modelField(event.payload?.model), reasoningEffort: modelField(context?.model?.api === 'openai-responses'
+      ? event.payload?.reasoning?.effort : event.payload?.reasoning_effort), payload: payload(event.payload) }));
   on('after_provider_response', event => append('provider_response', { turn, request, status: Number.isInteger(event.status) ? event.status : null }));
   on('tool_call', event => append('tool_call', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
     toolNameSha256: sha(String(event.toolName ?? '')), input: jsonMeasure(event.input) }));
@@ -271,14 +309,21 @@ export function observeConsumptionCost(api, settings) {
     remember(event.messages); const last = [...(event.messages ?? [])].reverse().find(message => message.role === 'assistant');
     append('agent_end', { turn, request, messages: jsonMeasure(event.messages), final: last ? assistant(last) : null });
   });
-  on('session_shutdown', () => { append('session_shutdown'); finish(); });
-  return { finish, status: () => ({ closed, errors, events: sequence }) };
+  on('session_shutdown', event => {
+    const reason = ['quit', 'reload', 'new', 'resume', 'fork'].includes(event?.reason) ? event.reason : 'unknown';
+    append('session_shutdown', { reason, binding,
+      targetSessionFile: typeof event?.targetSessionFile === 'string' ? textMeasure(event.targetSessionFile) : null });
+    if (reason === 'fork') { pendingForkRebind = true; detach(); }
+    else finish();
+  });
+  bind(api);
+  return { bind, finish, status: () => ({ closed, errors, events: sequence, binding, pendingForkRebind }) };
 }
 
 export function consumptionCostExtensionSource(settings) {
   const allowed = ['output', 'checkoutRoot', 'runId', 'sampleId', 'clockId'];
   if (Object.keys(settings).some(key => !allowed.includes(key))) throw new Error('COST_EXTENSION_SETTINGS_INVALID');
-  return `import fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nexport default api => { (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...${JSON.stringify(settings)}}); };\n`;
+  return `import fs from 'node:fs';\nimport crypto, { createHash } from 'node:crypto';\nimport path from 'node:path';\n${captureInjectionReceipts.toString()}\nconst settings = ${JSON.stringify(settings)};\nconst registry = globalThis[Symbol.for('context-broker.consumption-cost-observers.v1')] ??= new Map();\nexport default api => {\n  const key = path.resolve(settings.output), identity = JSON.stringify(settings), prior = registry.get(key);\n  if (prior) {\n    if (prior.identity !== identity) throw new Error('COST_OBSERVER_SETTINGS_CHANGED');\n    prior.observer.bind(api);\n  } else {\n    const observer = (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...settings});\n    registry.set(key, {identity, observer});\n  }\n};\n`;
 }
 
 export async function readConsumptionCostEvents(file) {
@@ -315,7 +360,7 @@ export function freezeConsumptionPlan({ conditions, samples }) {
 function traceErrors(events) {
   const errors = [];
   if (!Array.isArray(events) || events[0]?.phase !== 'observer_start' || events.at(-1)?.phase !== 'observer_end') return ['COST_TRACE_INCOMPLETE'];
-  let previous = null, time = -1n;
+  let previous = null, time = -1n, pendingFork = false, binding = 1;
   for (const [index, event] of events.entries()) {
     const { eventSha256, ...body } = event;
     if (event.sequence !== index + 1 || event.previousSha256 !== previous || !digest(eventSha256) || hash(JSON.stringify(body)) !== eventSha256)
@@ -324,11 +369,20 @@ function traceErrors(events) {
     else time = BigInt(event.monotonicNs);
     if (event.runId !== events[0].runId || event.sampleId !== events[0].sampleId || event.clockId !== events[0].clockId)
       errors.push('COST_TRACE_IDENTITY_CHANGED');
+    if (event.phase === 'session_shutdown' && event.reason === 'fork') {
+      if (pendingFork || event.binding !== binding) errors.push('COST_FORK_LIFECYCLE_INVALID');
+      pendingFork = true;
+    } else if (event.phase === 'observer_rebind') {
+      if (!pendingFork || event.reason !== 'fork' || event.binding !== binding + 1) errors.push('COST_FORK_LIFECYCLE_INVALID');
+      pendingFork = false; binding = event.binding;
+    }
     previous = eventSha256;
   }
   const end = events.at(-1);
   if (end.complete !== true || end.errors !== 0 || end.priorEventCount !== events.length - 1 || events.some(event => event.phase === 'observer_error'))
     errors.push('COST_OBSERVER_FAILED');
+  if (pendingFork || end.pendingForkRebind !== undefined && end.pendingForkRebind !== pendingFork)
+    errors.push('COST_FORK_LIFECYCLE_INVALID');
   return unique(errors);
 }
 

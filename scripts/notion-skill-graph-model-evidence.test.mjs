@@ -7,7 +7,7 @@ import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { catalogFacets, graphSourceViews, observeGraphSdk, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
-import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
+import { skillIdentity, skillFileRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { registerHooks } from 'node:module';
@@ -27,15 +27,16 @@ const canonical = value => value === null || typeof value !== 'object' ? JSON.st
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const lines = async file => (await readFile(file, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
 const emptyMetrics = { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] };
+const fixtureLibrary = '22222222-3333-4444-8555-666666666666';
 
 function sourceFixture(owner = 'root', resources = [{ path: 'guide.md', content: 'Complete resource bytes.\n' }]) {
   const body = '# Complete source\nUse the resource when needed.\n', resource = resources[0].content;
   const scope = 'a'.repeat(64), snapshot = 's_' + hash(body), version = hash('version-controlled');
-  const id = 'shared_skill:library-controlled:' + owner, uuid = '11111111-2222-4333-8444-555555555555';
-  const rootRef = 'skill://' + encodeURIComponent(id) + '/SKILL.md';
+  const id = skillIdentity(fixtureLibrary, owner), uuid = '11111111-2222-4333-8444-555555555555';
+  const rootRef = skillFileRef(id, 'SKILL.md');
   const record = { id, ref: rootRef, kind: 'skill', entrypoint: 'SKILL.md', name: 'Root', alias: 'root', description: 'Controlled complete source', enabled: true,
-    locator: { type: 'shared_skill', library_id: 'library-controlled', skill_id: owner, database_id: uuid, data_source_id: uuid, page_id: uuid }, default_context: true };
-  const ref = (name, file) => 'skill://' + encodeURIComponent(id) + '/' + name + '?snapshot=' + snapshot + '&file_id=' + file;
+    locator: { type: 'shared_skill', library_id: fixtureLibrary, skill_id: owner, database_id: uuid, data_source_id: uuid, page_id: uuid }, default_context: true };
+  const ref = name => skillFileRef(id, name, snapshot);
   const files = [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: hash(body), ref: ref('SKILL.md', 'file-main') },
     ...resources.map((file, index) => ({ path: file.path, bytes: Buffer.byteLength(file.content), sha256: hash(file.content), ref: ref(file.path, index ? 'file-resource-' + index : 'file-guide') }))];
   const bindings = files.map((file, index) => ({ path: file.path, file_id: index ? index === 1 ? 'file-guide' : 'file-resource-' + (index - 1) : 'file-main', page_id: uuid }));
@@ -69,7 +70,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
       file_id: fixture.bindings[index + 1].file_id, encoding: 'utf8', content: file.content })) };
   const handlers = new Map(), originalFetch = globalThis.fetch;
   const refs = batch.files.map(file => file.ref), shortRefs = ['sr:R' + 'C'.repeat(22), 'sr:R' + 'D'.repeat(22)], selected = 'sr:S' + 'B'.repeat(22);
-  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: 'skill://' + encodeURIComponent(fixture.id) };
+  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: fixture.id };
   const shortEvent = (ref, target) => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref, target } });
   const branch = [shortEvent(selected, { kind: 'selected', identity, snapshot_id: fixture.snapshot, version_id: fixture.version,
     body_sha256: hash(fixture.body), entrypoint: 'SKILL.md', ref: fixture.node.ref, file_id: 'file-main' }),
@@ -78,7 +79,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branch } };
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, validateResourceReadProjection, cwd: root, responses, cache, output,
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, validateResourceReadProjection, cwd: root, responses, cache, output,
         rootRef: fixture.rootRef, model: 'controlled/fake', prompt: 'controlled task' });
     const invoke = (id, input) => {
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
@@ -98,7 +99,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
     assert.equal((await lines(output)).find(event => event.phase === 'tool-result' && event.toolCallId === 'root-main')?.complete, true);
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'root-main', content: mainContent }] } }, ctx);
     for (const [id, paths] of [['unknown', [refs[0], refs[1].replace('notes.md', 'unseen.md')]],
-      ['wrong-owner', [refs[0], refs[1].replace(encodeURIComponent(fixture.id), 'another')]],
+      ['wrong-owner', [refs[0], skillFileRef(skillIdentity(fixtureLibrary, 'another'), 'notes.md', fixture.snapshot)]],
       ['wrong-pin', [refs[0], refs[1].replace(fixture.snapshot, 's_' + 'd'.repeat(64))]],
       ['duplicate', [refs[0], refs[0]]], ['main', [fixture.node.ref]], ['empty', []]]) {
       assert.equal(invoke(id, { paths }).block, true, id);
@@ -156,7 +157,7 @@ test('an explicit fixed resource in the actual frozen user prompt supports scala
   const handlers = new Map(), originalFetch = globalThis.fetch, ctx = { model: { provider: 'controlled', id: 'fake' } };
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, validateResourceReadProjection, cwd: root, responses, cache, output,
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, validateResourceReadProjection, cwd: root, responses, cache, output,
         entryMode: 'discovery-only', model: 'controlled/fake', prompt });
     const invoke = (id, input) => {
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
@@ -195,33 +196,70 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   const responses = path.join(root, 'responses'), ledger = path.join(root, 'source.jsonl'); await mkdir(responses); await writeFile(ledger, '');
   const observer = observeGraphSdk({ channel, fs, paths: { ledger, responses, outputRoot: root }, safeMetrics: safeRequestMetrics });
   const fixture = sourceFixture();
-  const publish = (id, operation, value) => {
+  const publish = (id, operation, value, requestMetrics = emptyMetrics) => {
     channel('context-broker.notion-sdk').publish({ version: 1, event: 'start', id, operation, pid: process.pid });
     channel('context-broker.notion-sdk-result').publish({ version: 1, id, operation, value });
-    channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: emptyMetrics });
+    channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: requestMetrics });
   };
   publish('catalog', 'list', representation === 'flat' ? { scope: fixture.scope, records: [fixture.record] } : pairedCatalogReceipt().value);
   publish('manifest', 'files', fixture.value.entries[0].manifest);
-  publish('consumption', 'consume', fixture.value); observer.close();
-  const receipts = await Promise.all(['catalog', 'manifest', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
+  publish('consumption', 'consume', fixture.value);
+  const resolution = { scope: fixture.scope, record: fixture.record, ref: fixture.files[1].ref };
+  publish('resolution', 'resolve', resolution, { ...emptyMetrics, total_requests: 1, trace: [{ event: 'attempt', attempt: 1,
+    kind: 'notion_metadata', method: 'POST', started_ms: 0, duration_ms: 1, outcome: 'success',
+    request_bytes: 2, response_bytes: 37, http_status: 200, request_id: 'resolve-metadata', rate_limit_reason: null, retry_after_seconds: null }] });
+  const cached = { kind: 'snapshot', libraryId: fixture.record.locator.library_id, scope: fixture.scope,
+    verifiedAt: 1000, fetched_at: 1000, stale: true, coverage: 'complete', records: [fixture.record], denials: [], generation: 1 };
+  publish('cached', 'candidates', cached);
+  publish('selected-library', 'library-selection', fixture.record.locator.library_id);
+  publish('library', 'library', { library_id: fixture.record.locator.library_id });
+  observer.close();
+  const receipts = await Promise.all(['catalog', 'manifest', 'consumption', 'resolution', 'cached', 'selected-library', 'library'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
   assert.deepEqual(receipts[2].value, fixture.value);
   assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
+  assert.deepEqual(receipts[3].value, resolution);
+  assert.deepEqual(graphSourceViews([receipts[3]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Resolving an identity does not read a body, prepare a graph or deliver a resource');
+  assert.deepEqual(receipts[4].value, cached);
+  assert.deepEqual(graphSourceViews(receipts.slice(4)), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Cached candidates and Library operations do not prove a current directory, preparation or delivered body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
+  assert.deepEqual(accounting.sdk_calls, { 'library-selection': 1, library: 1, candidates: 1, list: 1, 'source-members': 0, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
+  assert.equal(accounting.source_results_observed, 7);
+  for (const operation of ['candidates', 'library-selection']) {
+    assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === operation ? { ...item, metrics: receipts[3].metrics } : item), { sourceMode: 'sdk' }), /local SDK operation cannot make HTTP requests/);
+    assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === operation ? { ...item, metrics: null } : item), { sourceMode: 'sdk' }), /metrics/);
+  }
+  const contentEvents = [...events, { phase: 'sdk-start', requestId: 'content', operation: 'content-search' },
+    { phase: 'sdk-end', requestId: 'content', operation: 'content-search' }];
+  for (const metrics of [null, emptyMetrics]) {
+    const contentReceipts = [...receipts, { transport: 'sdk', requestId: 'content', operation: 'content-search',
+      status: 'completed', resultObserved: true, metrics, value: { kind: 'results', records: [] } }];
+    const content = graphSourceAccounting(contentEvents, contentReceipts, { sourceMode: 'sdk' });
+    assert.equal(content.sdk_calls['content-search'], 1);
+    assert.equal(content.actual_http_attempts, null, 'REST metrics cannot supply an MCP HTTP total');
+  }
+  assert.throws(() => graphSourceAccounting(events.filter(event => event.requestId !== 'consumption'),
+    receipts.filter(item => item.requestId !== 'consumption'), { sourceMode: 'sdk', requireConsumption: true }), /real consumer/);
   assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),
     receipts.map(item => item.requestId === 'manifest' ? { ...item, operation: 'future-operation' } : item), { sourceMode: 'sdk' }), /Unknown SDK operation/);
   assert.throws(() => graphSourceAccounting([], receipts, { sourceMode: 'sdk' }), /missing source observer/);
   assert.throws(() => graphSourceAccounting(events, receipts.map(item => ({ ...item, metrics: null })), { sourceMode: 'sdk' }), /metrics/);
+  assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === 'resolve' ? { ...item, metrics: null } : item), { sourceMode: 'sdk' }), /metrics/);
+  assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === 'resolve' ? { ...item, resultObserved: false, value: null } : item), { sourceMode: 'sdk' }), /actual return value/);
   assert.throws(() => graphSourceAccounting([...events, { phase: 'alternate-child-api', source: true }], receipts, { sourceMode: 'sdk' }), /CLI child/);
   assert.throws(() => graphSourceAccounting(events.filter(event => event.phase !== 'sdk-end'), receipts, { sourceMode: 'sdk' }), /must finish/);
+  assert.throws(() => graphSourceAccounting(events.filter(event => event.phase !== 'sdk-end' || event.operation !== 'resolve'), receipts, { sourceMode: 'sdk' }), /must finish/);
 });
 
-test('Pi observer admits a discovered short ref before execution and verifies SDK main, native directory and fixed resource at the provider', async () => {
+test('Pi observer verifies source modes and effect-bearing native main and scalar resource delivery', async () => {
   const fixture = sourceFixture(), root = await mkdtemp(path.join(await systemTempRoot(), 'graph-sdk-native-'));
+  fixture.files.forEach((file, index) => { file.mode = index ? '100755' : '100644'; fixture.manifest.files[index].mode = file.mode; });
+  fixture.entry.manifest_sha256 = hash(canonical(fixture.manifest));
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
+  const effectsFooter = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
   const cache = path.join(root, 'cache'), responses = path.join(root, 'responses'), output = path.join(root, 'observer.jsonl');
   await Promise.all([cache, responses].map(directory => mkdir(directory))); await writeFile(output, '');
   const candidate = 'sr:C' + 'A'.repeat(22), selected = 'sr:S' + 'B'.repeat(22), resourceRef = 'sr:R' + 'C'.repeat(22);
-  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: 'skill://' + encodeURIComponent(fixture.id) };
+  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: fixture.id };
   const branch = [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: candidate, target: { kind: 'candidate', identity } } }];
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branch } };
   const rawReceipt = (operation, value) => ({ transport: 'sdk', requestId: operation, operation, status: 'completed', resultObserved: true, value });
@@ -229,7 +267,7 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, cwd: root, responses, cache, output, entryMode: 'discovery-only', model: 'controlled/fake', prompt: 'controlled task' });
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, cwd: root, responses, cache, output, entryMode: 'discovery-only', model: 'controlled/fake', prompt: 'controlled task' });
     await handlers.get('session_start')({}, ctx);
     const system = '<skill><name>' + fixture.record.name + '</name><description>' + fixture.record.description + '</description><location>' + candidate + '</location></skill>';
     handlers.get('before_agent_start')({ prompt: 'controlled task', systemPrompt: system }, ctx);
@@ -240,6 +278,7 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
     assert.equal(invoke('before-provider-main', { path: candidate })?.block, true);
     const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'system', content: system }] } }, ctx);
+    for (const readOnly of [true, false]) assert.equal(invoke('retired-policy-' + readOnly, { path: candidate, readOnly }).block, true);
     assert.equal(invoke('main', { path: candidate }), undefined, 'Actual provider metadata identity authorizes the native request before source acquisition');
     const prior = sourceFixture('parent');
     prior.value.preparation.nodes.push({ id: fixture.id, state: 'candidate', record: fixture.record });
@@ -254,10 +293,10 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
       snapshot_id: fixture.snapshot, version_id: fixture.version, body_sha256: hash(fixture.body), entrypoint: 'SKILL.md', ref: fixture.node.ref, file_id: 'file-main' } } },
       { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: resourceRef, target: { kind: 'resource', owner: selected,
         path: 'guide.md', ref: fixture.files[1].ref, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256, file_id: 'file-guide' } } });
-    const directory = { files: fixture.files, required: [], candidates: [], references: [] };
+    const directory = { files: fixture.files.map(({ mode, ...file }) => file), required: [], candidates: [], references: [] };
     const modelDirectory = { ...directory, files: fixture.files.map((file, index) => ({ path: file.path, bytes: file.bytes, ref: index ? resourceRef : selected })) };
-    const content = fixture.body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: selected, directory: modelDirectory }) + '\n</skill-directory>';
-    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'main', content: [{ type: 'text', text: content }], details: { contextBrokerRead: {
+    const content = fixture.body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: selected, directory: modelDirectory }) + '\n</skill-directory>' + effectsFooter;
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'main', content: [{ type: 'text', text: content }], details: { effects, contextBrokerRead: {
       version: 3, toolCallId: 'main', snapshotId: fixture.snapshot, bodySha256: hash(fixture.body), bytes: Buffer.byteLength(fixture.body), binding: fixture.binding,
       delivery: { start: 0, end: fixture.body.length, encoding: 'raw' }, directory } } }, ctx);
     assert.equal(invoke('guide', { path: resourceRef }), undefined);
@@ -265,12 +304,29 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
       version_id: fixture.version, path: 'guide.md', ref: fixture.files[1].ref, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256,
       entrypoint_sha256: hash(fixture.body), file_bindings: fixture.bindings }), outputEvidence: { path: path.join(cache, 'already-produced'),
       content: fixture.resource, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256 } });
-    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'guide', content: [{ type: 'text', text: fixture.resource }] }, ctx);
-    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'main', content }, { role: 'tool', tool_call_id: 'guide', content: fixture.resource }] } }, ctx);
+    const resourceContent = fixture.resource + effectsFooter;
+    const resourceDetails = toolCallId => ({ effects, contextBrokerResource: { version: 2, toolCallId, id: fixture.id, scope: fixture.scope,
+      snapshot_id: fixture.snapshot, version_id: fixture.version, ref: fixture.files[1].ref, path: 'guide.md', file_id: 'file-guide',
+      bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256, delivery: { start: 0, end: fixture.resource.length, encoding: 'raw' },
+      delivered_complete_text: true, loaded: false } });
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'guide', content: [{ type: 'text', text: resourceContent }], details: resourceDetails('guide') }, ctx);
+    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'main', content }, { role: 'tool', tool_call_id: 'guide', content: resourceContent }] } }, ctx);
     const events = await lines(output);
     assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance.source, 'verified-notion-metadata');
     for (const id of ['main', 'guide']) assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === id)?.complete, true, JSON.stringify(events.filter(event => event.phase === 'tool-result')));
     assert.deepEqual(events.filter(event => event.phase === 'provider-request').at(-1).contents.map(item => item.sha256).sort(), [hash(fixture.body), hash(fixture.resource)].sort());
+    assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === 'guide').sha256, hash(fixture.resource), 'The disclosed effects footer is not author file content');
+    for (const [id, mutate] of [
+      ['wrong-effects', result => { result.content[0].text = fixture.resource + effectsFooter.replace('unchanged', 'unknown'); }],
+      ['wrong-resource-owner', result => { result.details.contextBrokerResource.id = 'another-owner'; }],
+      ['wrong-resource-pin', result => { result.details.contextBrokerResource.snapshot_id = 's_' + 'e'.repeat(64); }],
+      ['missing-resource-bytes', result => { result.content[0].text = fixture.resource.slice(1) + effectsFooter; }],
+    ]) {
+      assert.equal(invoke(id, { path: resourceRef }), undefined);
+      const result = { toolName: 'read', toolCallId: id, content: [{ type: 'text', text: resourceContent }], details: resourceDetails(id) };
+      mutate(result); handlers.get('tool_result')(result, ctx);
+      assert.equal((await lines(output)).find(row => row.phase === 'tool-result' && row.toolCallId === id)?.complete, false, id);
+    }
     branch.push({ ...branch[1], data: { ...branch[1].data, target: { ...branch[1].data.target, snapshot_id: 's_' + 'd'.repeat(64) } } });
     assert.equal(invoke('wrong-branch', { path: selected }).block, true, 'A conflicting persisted binding never authorizes a read');
   } finally { globalThis.fetch = originalFetch; }
@@ -279,7 +335,7 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
 
 function pairedCatalogReceipt() {
   const full = { scope: 'scope', count: 1, records: [{ id: 'a' }], databases: [],
-    coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } };
+    coverage: { method: 'explicit_library', exhaustive: true, failed_sources: [], search_index_limited: false } };
   const directory = { ...structuredClone(full), view: { id: 'default' }, capability_directory: true, view_selection: 'first',
     coverage: { ...full.coverage, method: 'explicit_view' } };
   return { transport: 'sdk', requestId: 'paired', operation: 'list', status: 'completed', resultObserved: true,

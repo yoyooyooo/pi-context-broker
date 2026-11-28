@@ -2,34 +2,37 @@
   "name": "context-broker-workspace",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.2.17",
-  "workspaces": ["packages/*"],
+  "packageManager": "bun@1.4.3",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs",
     "build:broker": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs --target broker",
     "pack:broker": "bun scripts/pack.mjs --target broker",
     "typecheck": "bun run --cwd packages/context-broker typecheck",
-    "check": "bun run test:verification && bun run build && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
-    "test:verification": "node --test scripts/notion-integration-hosts.test.mjs scripts/pack-target.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-contract.test.mjs scripts/skill-consumption-cost.test.mjs scripts/skill-consumption-startup.test.mjs scripts/skill-consumption-provider.test.mjs scripts/skill-consumption-model-baseline.test.mjs scripts/skill-consumption-source-baseline.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/notion-sdk-pi.test.mjs scripts/skill-preparation-evidence.test.mjs scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-host-index.test.mjs scripts/notion-skill-graph-project.test.mjs scripts/notion-skill-graph-delivery.test.mjs",
+    "check": "bun run test:verification && bun run build:broker && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
+    "test:verification": "bun run prepare:ref && node --test scripts/paired-capacity.test.mjs scripts/paired-environment.test.mjs scripts/paired-closeout.test.mjs scripts/paired-runtime-identity.test.mjs scripts/context-broker-rpc-harness.test.mjs packages/context-broker/scripts/final-request-undici.test.ts scripts/catalog-representation.test.mjs scripts/context-once-evidence.test.mjs scripts/notion-sdk-pi.test.mjs scripts/notion-sdk-pi-cache-upgrade.test.mjs scripts/notion-sdk-pi-blocked-materialization.test.mjs scripts/notion-sdk-observers.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/pack-target.test.mjs scripts/skill-consumption-contract.test.mjs scripts/verification-skill-routing.test.mjs scripts/verify-next-worktrees.test.mjs scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs scripts/verify-pi-daily-cache.test.mjs scripts/notion-agent-scenarios.test.mjs scripts/notion-agent-onboarding.test.mjs scripts/notion-agent-tool-lineage.test.mjs scripts/notion-agent-analysis.test.mjs scripts/notion-agent-metadata.test.mjs scripts/notion-agent-cli-process.test.mjs scripts/notion-agent-fixtures.test.mjs scripts/notion-agent-workflow-runtime.test.mjs scripts/verify-pi-daily-fork.test.mjs scripts/verify-pi-daily-budget.test.mjs",
     "check:broker": "bun run test:verification && bun run build:broker && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
     "test": "bun run check",
     "test:host": "bun run --cwd packages/context-broker test:host",
     "test:global-config": "bun run --cwd packages/context-broker test:global-config",
     "test:lifecycle": "node packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs",
-    "test:artifacts": "bun run test:artifacts:pi && bun run test:artifacts:omp",
-    "test:artifacts:pi": "node scripts/verify-artifacts.mjs --host pi",
-    "test:artifacts:omp": "node scripts/verify-artifacts.mjs --host omp",
-    "test:consumption": "bun run --cwd packages/context-broker test:consumption",
+    "test:artifacts": "node scripts/verify-artifacts.mjs",
+    "test:consumption": "bun run prepare:ref && bun run --cwd packages/context-broker test:consumption",
     "test:release": "node --test scripts/release.test.mjs",
-    "test:ui": "node scripts/verify-native-ui.mjs",
-    "test:model": "node scripts/verify-real-model.mjs",
-    "test:source-dependencies": "node scripts/verify-source-dependencies.mjs",
     "pack:dry": "bun scripts/pack.mjs --dry-run",
     "release": "bun scripts/release.ts",
-    "release:check": "bun scripts/release.ts --precheck"
+    "release:check": "bun scripts/release.ts --precheck",
+    "verify:formal": "node scripts/verify-consumer-observations.mjs",
+    "test:formal-contract": "node --test scripts/formal-result-contract.test.mjs",
+    "prepare:ref": "node scripts/prepare-skill-ref.mjs",
+    "test:pi-editor": "bun test packages/context-broker/scripts/pi-dollar-editor.test.ts",
+    "test:pi-queued-input": "bun test packages/context-broker/scripts/pi-queued-input.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "@xterm/headless": "6.0.0",
     "typescript": "^5.9.3"
   }
 }

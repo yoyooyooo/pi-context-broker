@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { isBundledBuiltin } from "./bundled-builtins";
+import { candidateDescription, candidateMetadata, type CompletionCandidate, type CompletionSnapshot } from "./completion-candidates";
 import type {
   AutocompleteItem,
   AutocompleteProvider,
@@ -149,17 +150,19 @@ function fuzzySubsequenceScore(normalizedQuery: string, normalizedValue: string)
 }
 
 export function scoreDollarSuggestion(record: DiscoveryRecord, query: string): number {
-  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return 0;
-  const normalizedQuery = /[%@/]/u.test(query) ? query : normalizeKey(query);
-  if (!normalizedQuery) return 1;
-  const fields = [
+  return scoreDollarFields([
     { value: recordToken(record), weight: 100 },
     ...(record.selectionToken && record.token ? [{ value: record.token, weight: 100 }] : []),
     { value: recordNormalizedName(record), weight: 100 },
-    ...(recordKind(record) === "skill" && record.upstream ? [{ value: `${record.upstream.repo}/${recordNormalizedName(record)}`, weight: 100 }] : []),
     ...recordNormalizedAliases(record).map((value) => ({ value, weight: 90 })),
     { value: recordNormalizedDescription(record), weight: 60 },
-  ];
+  ], query);
+}
+
+function scoreDollarFields(fields: readonly { value: string; weight: number }[], query: string): number {
+  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return 0;
+  const normalizedQuery = /[%@/]/u.test(query) ? query : normalizeKey(query);
+  if (!normalizedQuery) return 1;
   let best = 0;
   for (const field of fields) {
     if (!field.value) continue;
@@ -186,8 +189,7 @@ function autocompleteDescription(record: DiscoveryRecord): string | undefined {
     : isBundledBuiltin(record) ? "bundled builtin" : (record as SkillRecord).sourceId ?? skillSourceLabel(recordPath(record));
   const description = compactDescription(recordDescription(record));
   const details = description ? (label ? `${label} · ${description}` : description) : label;
-  return kind === "skill" && record.upstream
-    ? [`$${recordToken(record)}`, details].filter(Boolean).join(" · ") : details;
+  return details;
 }
 
 function matchedRouterNameOrAlias(record: DiscoveryRecord, query: string): boolean {
@@ -199,11 +201,8 @@ function matchedRouterNameOrAlias(record: DiscoveryRecord, query: string): boole
 }
 
 export function dollarAutocompleteItems(registry: DiscoveryRecord[], query: string, options: { precise?: boolean } = {}): Array<AutocompleteItem & { identity: string; kind: "skill" | "router" | "prompt"; source: "local" | "notion"; ref: string }> {
-  const slash = query.indexOf("/");
-  const namespace = slash < 0 ? undefined : query.slice(0, slash);
-  const upstreamOnly = namespace !== undefined && registry.some(record => recordKind(record) === "skill" && record.upstream?.repo === namespace);
   return registry
-    .map((record) => ({ record, score: upstreamOnly && (recordKind(record) !== "skill" || record.upstream?.repo !== namespace) ? 0 : scoreDollarSuggestion(record, query) }))
+    .map((record) => ({ record, score: scoreDollarSuggestion(record, query) }))
     .filter((item) => item.score > 0)
     .sort((a, b) =>
       b.score - a.score ||
@@ -217,35 +216,70 @@ export function dollarAutocompleteItems(registry: DiscoveryRecord[], query: stri
       source: record.source ?? "local",
       ref: record.ref ?? record.path,
       value: "$" + (options.precise ? preciseRecordToken(record) : recordToken(record)),
-      label: recordKind(record) === "skill" && record.upstream ? `${record.upstream.repo}/${recordName(record)} [skill]` : `$${recordToken(record)} [${recordKind(record)}]`,
+      label: `$${recordToken(record)} [${recordKind(record)}]`,
       description: autocompleteDescription(record),
     }));
 }
 
 export const discoveryAutocompleteItems = dollarAutocompleteItems;
 
-export type DollarMenu = {
-  records: DiscoveryRecord[];
-  followUp?: Promise<DollarMenu>;
-  notice?: string;
+export type DollarMenu = CompletionSnapshot;
+export type DollarMenuSource = {
+  read(): DollarMenu;
+  subscribe(listener: () => void): () => void;
+  scope(): unknown;
 };
 
-function menuItems(menu: DollarMenu, query: string) {
-  const items = dollarAutocompleteItems(menu.records, query);
-  if (!menu.notice) return items;
-  return [...items, { identity: "notion-catalog-notice", kind: "skill" as const, source: "notion" as const, ref: "", value: "", label: menu.notice, description: "" }];
+function candidateScore(candidate: CompletionCandidate, query: string): number {
+  if (candidate.origin === "local") return scoreDollarSuggestion(candidate.record, query);
+  const record = candidateMetadata(candidate);
+  const canonical = `${candidate.source.namespace ?? candidate.source.id}/${candidate.token.slice(0, candidate.token.lastIndexOf("@"))}`;
+  return scoreDollarFields([
+    { value: candidate.token, weight: 100 }, { value: canonical, weight: 100 },
+    { value: record.alias, weight: 100 }, { value: normalizeKey(record.name), weight: 100 },
+    { value: normalizeKey(record.description), weight: 60 },
+  ], query);
+}
+
+function candidateRouterMatch(candidate: CompletionCandidate, query: string): boolean {
+  if (candidate.origin === "local") return matchedRouterNameOrAlias(candidate.record, query);
+  const normalized = normalizeKey(query);
+  const metadata = candidateMetadata(candidate);
+  return metadata.kind === "router" && Boolean(normalized) && metadata.alias.includes(normalized);
+}
+
+export function completionCandidateItems(candidates: readonly CompletionCandidate[], query: string): AutocompleteItem[] {
+  return candidates.map(candidate => ({ candidate, score: candidateScore(candidate, query) }))
+    .filter(value => value.score > 0)
+    .sort((a, b) => b.score - a.score || Number(candidateRouterMatch(b.candidate, query)) - Number(candidateRouterMatch(a.candidate, query))
+      || candidateMetadata(a.candidate).name.localeCompare(candidateMetadata(b.candidate).name))
+    .slice(0, 50).map(({ candidate }) => ({ identity: candidate.identity, candidate,
+      kind: candidateMetadata(candidate).kind, source: candidate.origin === "local" ? "local" : "notion",
+      ...(candidate.origin === "source_member" ? {} : { ref: candidate.record.ref ?? (candidate.origin === "local" ? candidate.record.path : "") }),
+      value: "$" + candidate.token, label: `$${candidate.token} [${candidateMetadata(candidate).kind}]`,
+      description: candidate.origin === "local" ? autocompleteDescription(candidate.record) : candidateDescription(candidate) }));
+}
+
+async function settledSuggestions(produce: () => Promise<import("./types").AutocompleteSuggestions | null>, signal?: AbortSignal) {
+  if (signal?.aborted) return null;
+  const pending = Promise.resolve().then(produce);
+  if (!signal) return pending.catch(() => null);
+  const cancelled = Promise.withResolvers<null>();
+  const abort = () => cancelled.resolve(null);
+  signal.addEventListener("abort", abort, { once: true });
+  try { return await Promise.race([pending.catch(() => null), cancelled.promise]); }
+  finally { signal.removeEventListener("abort", abort); }
 }
 
 export function createDollarSkillAutocompleteProvider(
   current: AutocompleteProvider,
-  registrySource: Promise<DiscoveryRecord[]> | (() => Promise<DiscoveryRecord[] | DollarMenu>),
-  onAccept?: (record: DiscoveryRecord) => void,
+  source: DollarMenuSource,
+  onAccept?: (candidate: CompletionCandidate) => void,
 ): AutocompleteProvider {
-  const candidates = new Map<string, DiscoveryRecord>();
-  const remember = (records: DiscoveryRecord[]) => {
-    for (const record of records) candidates.set(recordIdentity(record), record);
-  };
   return {
+    triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "$"])],
+    subscribe: source.subscribe,
+    getCompletionScope: source.scope,
     getInlineHint: current.getInlineHint?.bind(current),
     trySyncSlashCompletion: current.trySyncSlashCompletion?.bind(current),
     trySyncInlineReplace: current.trySyncInlineReplace?.bind(current),
@@ -253,9 +287,9 @@ export function createDollarSkillAutocompleteProvider(
       if (dollarAutocompletePrefixAtCursor(lines, cursorLine, cursorCol) !== undefined) {
         return this.getSuggestions(lines, cursorLine, cursorCol, signal);
       }
-      return current.getForceFileSuggestions
+      return settledSuggestions(() => current.getForceFileSuggestions
         ? current.getForceFileSuggestions(lines, cursorLine, cursorCol, signal)
-        : current.getSuggestions(lines, cursorLine, cursorCol, signal);
+        : current.getSuggestions(lines, cursorLine, cursorCol, signal), signal);
     },
     async getSuggestions(lines, cursorLine, cursorCol, options, onPartial) {
       const signal = options && ("signal" in options ? options.signal : options);
@@ -266,44 +300,14 @@ export function createDollarSkillAutocompleteProvider(
       if (endsAfterCompletedDollarToken(textBeforeCursor)) return null;
       const prefix = dollarAutocompletePrefixAtCursor(lines, cursorLine, cursorCol);
       if (prefix === undefined) {
-        return current.getSuggestions(lines, cursorLine, cursorCol, options, onPartial);
+        return settledSuggestions(() => current.getSuggestions(lines, cursorLine, cursorCol, options, onPartial), signal);
       }
-      const loaded = await (typeof registrySource === "function" ? registrySource() : registrySource);
-      if (signal?.aborted) return null;
-      let menu: DollarMenu = Array.isArray(loaded) ? { records: loaded } : loaded;
-      remember(menu.records);
-      // Forced completion has no partial callback. Keep its current choices usable
-      // while the shared catalog refresh continues for the next editor request.
-      if (menu.followUp && menu.records.length && !onPartial) {
-        return { items: menuItems(menu, prefix.slice(1)), prefix };
-      }
-      let offered: ReturnType<typeof dollarAutocompleteItems> = [];
-      const suggestions = () => {
-        remember(menu.records);
-        const next = menuItems(menu, prefix.slice(1));
-        const byIdentity = new Map(next.filter(item => item.value).map(item => [item.identity, item]));
-        const stable = offered.map(item => {
-          const current = byIdentity.get(item.identity);
-          byIdentity.delete(item.identity);
-          return current ?? { ...item, value: "", ref: "", label: "This item is no longer available" };
-        });
-        offered = [...stable, ...byIdentity.values()];
-        return { items: [...offered, ...next.filter(item => !item.value)], prefix };
-      };
-      while (menu.followUp) {
-        onPartial?.(suggestions());
-        const cancelled = Promise.withResolvers<null>();
-        const abort = () => cancelled.resolve(null);
-        signal?.addEventListener("abort", abort, { once: true });
-        try {
-          if (signal?.aborted) return null;
-          const next = await Promise.race([menu.followUp, cancelled.promise]);
-          if (!next || signal?.aborted) return null;
-          menu = next;
-        } finally { signal?.removeEventListener("abort", abort); }
-      }
-      const result = suggestions();
-      return result.items.length ? result : null;
+      // No SDK, filesystem or producer promise is on a keypress's critical path.
+      // Empty results keep their display intent in the Pi adapter.
+      try {
+        const items = completionCandidateItems(source.read().candidates, prefix.slice(1));
+        return items.length ? { items, prefix } : null;
+      } catch { return null; }
     },
 
     applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
@@ -314,8 +318,9 @@ export function createDollarSkillAutocompleteProvider(
         const beforePrefix = currentLine.slice(0, cursorCol - prefix.length);
         const afterCursor = currentLine.slice(cursorCol);
         const suffix = afterCursor.startsWith(" ") ? "" : " ";
-        const selected = item.identity ? candidates.get(item.identity) : undefined;
-        if (selected) onAccept?.(selected);
+        const selected = item.candidate;
+        if (!selected || item.identity !== selected.identity || item.value !== "$" + selected.token) return { lines, cursorLine, cursorCol };
+        onAccept?.(selected);
         const nextLines = [...lines];
         nextLines[cursorLine] = `${beforePrefix}${item.value}${suffix}${afterCursor}`;
         return {

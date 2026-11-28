@@ -1,3 +1,4 @@
+import { completionMenu } from "./fixtures/completion-menu";
 import assert from "node:assert/strict";
 import { writeFileSync, readFileSync } from "node:fs";
 // @ts-ignore Resolved by the actual OMP extension loader, never a stand-in editor.
@@ -73,7 +74,8 @@ export default async function (): Promise<void> {
       },
     };
     const metadata = Promise.resolve(records).then(value => { metadataLoads++; return value; });
-    const broker = createDollarSkillAutocompleteProvider(base, metadata);
+    await metadata;
+    const broker = createDollarSkillAutocompleteProvider(base, completionMenu(records));
     const provider = Object.create(broker) as AutocompleteProvider;
     provider.getSuggestions = async (...args) => {
       queries++;

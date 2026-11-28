@@ -1,0 +1,87 @@
+---
+name: verify-notion-consumer-state
+description: "维护和验证 Notion 消费者的当前资格、缓存原始验证时间、请求顺序、取消与会话代次，以及 Library 的 branch/turn 绑定、固定 root＋Requires 选择、完整正文交付、provider 接受、turn 完成和公开投影回执。修改这些状态、实际守卫、有限模型或验证入口时使用。"
+---
+
+# Verify Notion Consumer State
+
+[验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。本入口只拥有消费者状态；消费 transport、SDK capability 和独立安装包交给 [integration Skill](../verify-notion-skills-integration/SKILL.md)。不新增总验证器，不恢复旧管理或隐式 retention 模型。
+
+在仓库根目录执行。先读 [合同与源码对应](references/contracts.md)，确定改动触及的状态所有者。
+
+| 状态 | 实际所有者 | 模型 |
+| --- | --- | --- |
+| 当前资格、原始证据、观察顺序 | consumer-observation；host-skills 的精确失败归因与发布门禁 | Availability、ReadRace、FreshnessPublication |
+| 完整准备与固定成员选择 | prepare-protocol、graphPreparation.commit、session-graph | SelectionGraph |
+| 完整正文、provider 接受、turn、公开投影回执 | session-source-snapshot、session-active、host-skills hooks | DeliveryBoundary |
+| 旧会话固定恢复、缺失闭包隔离、继续提问 | session-recovery、index restoreActive、host-skills 最终交付守卫 | RecoveryClosure |
+| Library 选择、turn 固定目标、迟到目录与旧 pin | branch selection、turn admission、SDK/CLI scope、metadata publication | LibrarySession |
+| 候选快照发布、下拉关闭意图和稳定高亮 | completion-candidates、dollar、pi-dollar-editor；input receipt 是消费的独立边界 | MenuPublication |
+| 本地既有选择、namespace、发现完整度与匹配数 | index.discoverInputMembers、completion-candidates.matchSourceMemberCandidate | SourceMemberSelection |
+
+`coverage.json` 是各套件唯一 cases 与 expected_rules 清单。名为 current 的旧缺陷配置是故意保留的负例，不是当前实现结论。本地固定 pin 不承诺远端历史恢复。
+
+## 检查环境
+
+使用既有锁定安装配置 `PSTACK_STATECHART_ROOT` 和 `TLA2TOOLS`，不要更换工具版本取得通过。
+
+```sh
+node .agents/skills/verify-notion-consumer-state/scripts/control.mjs doctor
+```
+
+Doctor 核完整工具哈希、受支持 Node/Bun/Java 和已有依赖。缺工具或来源不一致记 blocked；它不访问真实 Notion、不调用模型，也不证明认证。
+
+## 执行既有检查
+
+改变模型、入口或整体源码映射时执行完整 run；仅定位一个受影响状态时执行该模型的全部配置和对应真实守卫。
+
+```sh
+CONSUMER_STATE_EVIDENCE="$(mktemp -d /tmp/notion-consumer-state.XXXXXX)"
+node .agents/skills/verify-notion-consumer-state/scripts/control.mjs run --out "$CONSUMER_STATE_EVIDENCE"
+node .agents/skills/verify-notion-consumer-state/scripts/control.mjs evidence --out "$CONSUMER_STATE_EVIDENCE"
+```
+
+输出须为仓库外新建或预建的空绝对目录。run 先检查现役形式结果和证据合同，再串行执行 observations、consumer-state、实际函数/宿主 hooks 回归、两组真实守卫破坏。失败即停止，保留本次原始输出供诊断。当前 manifest 为 v2：evidence 核对完整步骤、退出状态、日志和四份原始结果 summary 的哈希；只保留 complete 字段但修改 summary 也必须失败。历史 v1 回执保持历史身份，不能升级或填成当前通过。evidence 只查保存完整性，不代替行为通过。
+
+```sh
+node scripts/verify-consumer-observations.mjs --suite consumer-state --model DeliveryBoundary --out "$(mktemp -d /tmp/consumer-delivery.XXXXXX)"
+CONSUMER_MUTATION_PARENT="$(mktemp -d /tmp/consumer-guard.XXXXXX)"
+node scripts/check-consumer-state-mutations.mjs --out "$CONSUMER_MUTATION_PARENT/mutation" --case public-projection-ack
+```
+
+mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublication`、`SelectionGraph`、`DeliveryBoundary`、`RecoveryClosure`、`LibrarySession`、`MenuPublication` 或 `SourceMemberSelection`，不复制工具内部参数。模型 runner 生成 Mermaid/report/TLC；需要展示图时依照 [图形产物复现](../../../docs/formal-verification-maintenance.md#图形产物定位与复现)，只渲染本次真实生成的图。
+
+T01 涉及缓存、变化证据、TTL、库选择、启动/SDK 次序或会话复用时，必须交接 [新进程缓存验证](../verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用) 的 `http-warm-restart`、`http-warm-directory-expired`、`http-smart-revalidate` 和 `http-smart-current`，随后复验普通安装。Core 持有跨进程事实 epoch、完整集合、权限/退休记录和最终全闭包读集；Broker 消费其准入结果，保持 ticket、scope、原 pin 与完整交付守卫。metadata unchanged 不独立证明整图可用，known dirty 遇到 unknown 不恢复旧资格。这里的模型、SDK 或 hooks 只证明对应状态守卫，不能代填新 PID/session、全部 HTTP、准确的 snapshot/校验时间与实际 provider 全文的 host 结果。
+
+排队输入改动还须沿宿主验证入口运行 `bun run test:pi-queued-input`，显式配置
+`PI_QUEUED_INPUT_PACKAGE` 为实际 Pi 安装根。最终包复验可另设
+`PI_QUEUED_INPUT_BROKER` 为实际 Broker package 根；默认只测试当前源码。
+此测试要求真实 AgentSession 图片归一化、SessionManager 的消息实例和
+ExtensionRunner 的 context clone。未提供宿主直接失败，不能将缺省 skip 算通过。
+受测版本由实际 package.json 报告；当前已核接口为 Pi 1.6.0。
+
+## 判断和修复
+
+- 完整核对独立 expected_rules，包括 TypeOK、已声明的时序性质和 NoDeadlock。候选全部成立；负例只失败声明的集合。未穷尽、cut、超时、解析失败、未知结果都不能算通过。
+- 将最短反例对应到实际函数。先查模型的原子边界、前提和有限域，不能删性质、放宽断言或改负例期待取得通过。
+- source hash 漂移时先读实际 diff，确认状态所有者及实际 guard，再更新映射；不得盲目刷新 hash。包 pin/build/guidance 不是状态证明前提。
+- 真守卫破坏只在 runner 的隔离副本内进行：baseline 通过、mutated 出现行为断言失败、恢复原字节后通过，并核工作树未变。语法错误、缺模块或工具故障不算检出。
+- 多根完整并集、共享 Requires 冲突/批量刷新、同正文但 Requires 改变和精确 physical owner 由 `session-refresh.test.ts`、`session-active.test.ts` 补充；单根 SelectionGraph 不自动证明这些组合。
+- 恢复失败走 `RecoveryClosure` 与 `session-recovery.test.ts`。有限模型检查三次提问和完整闭包；真实回放另核整轮 30 秒恢复预算、失败退避和不合作的迟到 producer。它们不证明 UI 输入或模型任务完成。
+- Library 切换沿 `LibrarySession`。分开 branch default、已接纳 turn、完整 ref 的单次目标、目录 ticket 和旧 pin owner；不要把选择 B 当成取消 A 的全局 generation。实际回放必须包含失败切换、A 迟到目录、同名跨库对象、branch/rewind/resume、后续 turn 取 B 及旧 A pin 保留。CLI 根页面/四表/pending 的物理校验仍归 CLI LibraryLifecycle。
+- 菜单沿 `MenuPublication`，分别检查快照准入、实际下拉更新、接受和 Esc。模型只有固定 scope 的 A/B、一次缓存和刷新、一次用户结束意图；缺项撤下、跨库、非合作 Promise 和毫秒时延由实际 Editor 与宿主回放核对。输入归属使用 `InputReceipt`，不能从 AbortSignal 或下一草稿重建。
+- Source 首引用沿 `SourceMemberSelection`，分别检查已有本地选择、真实 namespace、complete/partial 和 0/1/多个匹配。partial 不能成为确定缺失、唯一或歧义结论，也不能获得管理准入。三个删守卫负例必须出现声明的真实 TLC 反例；同名 local/Notion、可见 warning、0 management 和完整正文仍用实际 host/集成回放核对。
+
+入口指令改变后，将作者实跑与冷启动评估分开。独立 agent 只取得任务、本 Skill 和必要工具配置，按所选切片执行；未做时记录 `instruction_evaluation:not_run`，不把作者结果或结构检查当成独立使用成功。
+
+## 结果边界与清理
+
+资格、已选择、已准备、provider 接受、turn 完成和公开投影回执分别判断。HTTP 2xx 不代表模型任务完成，返回 draft 不代表宿主已持久化；本地固定内容也不表示当前授权。
+
+本入口不访问真实 Notion、启动真实 Pi 会话或调用模型。不证明服务线性一致性、跨机权限/墙钟竞态、实际 serializer、任意宿主或模型最终描述。独立安装与安装身份沿 integration，自然版本/恢复旅程沿 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)，宿主实现沿 [verify-context-broker](../verify-context-broker/SKILL.md)；OMP/Tern 延期。
+
+只清理本轮进程和自有绝对路径，经系统 Trash；不动用户现有会话、全局配置、日用安装或未结清 operation Store。运行结果放仓库外，不在源码中累计历史图册或成绩账本。
+
+## 当前合同和运行回执
+
+按上文的验证交接使用配对 CLI 的合同/场景索引与薄回执。记录 actual command、源码/dirty tree、实际加载路径/bytes、机器/runtime、初态、层级和原件 hash；首次失败与复验关系保留。fixture 或受控 provider 不作为 live/natural；结构检查不代表独立 Agent 使用成功，未做时标 instruction_evaluation:not_run。
