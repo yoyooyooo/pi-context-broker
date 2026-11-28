@@ -9,7 +9,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { runColdMaterializationPrompt, assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
 import { seedCacheUpgrade, readCacheUpgradeEvidence, assertCacheUpgradeEvidence } from './notion-sdk-pi-cache-upgrade.mjs';
-import { blockedMaterializationScenario, blockedMaterializationFacts, runBlockedMaterialization, verifyBlockedMaterializationEvidence } from './notion-sdk-pi-blocked-materialization.mjs';
+import { blockedMaterializationScenario, blockedMaterializationFacts, captureBlockedMaterializationBefore, markBlockedMaterializationClients, runBlockedMaterialization, verifyBlockedMaterializationEvidence } from './notion-sdk-pi-blocked-materialization.mjs';
 
 // These cases are part of notion-sdk-pi, with the same installed artifact and
 // actual Pi provider serializer. There is no alternate test runner or mock SDK.
@@ -617,11 +617,13 @@ export async function runMaterializationScenario(name, info, out, helpers) {
   };
   try {
     service = await fixture.startSdkSourceFixture(facts.sample, join(base, 'source-http.jsonl'), { allowCurrentWrites: true, forbidProjectionWrites: true });
+    if (name === blockedMaterializationScenario) await save(join(base, 'before-blocked-member.json'), captureBlockedMaterializationBefore(facts, service));
     provider = await startLoopbackMock({ selectCall: context => helpers.selectProviderCall(context, plan), limits: { maxRequests: 60 },
       onBody: async (record, bytes) => {
         const file = 'provider-' + String(wire.length + 1).padStart(3, '0') + '.json'; await writeFile(join(base, file), bytes, { mode: 0o600 });
         wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record });
       } });
+    if (name === blockedMaterializationScenario) await markBlockedMaterializationClients(base);
     const manager = await controlledManager(base, info, facts, service.origin, fixture);
     const control = join(base, 'control.json'), providerExtension = join(base, 'provider.mjs'), observerExtension = join(base, 'lifecycle.mjs'), preload = join(base, 'observer.mjs');
     await save(control, { action: 'none' });

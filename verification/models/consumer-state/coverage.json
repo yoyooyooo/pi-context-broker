@@ -1603,8 +1603,8 @@
         "owners": "The paired CLI classifies known per-member Git representation and keeps full manifest/blob validation in prepare. Broker source-materialization.ts rejects blocked/unknown before management diagnostics or dispatch; ready physical members retain ordinary reading.",
         "replays": [
           "source-materialization.test.ts: readiness guard admits no manager call",
-          "source-materialize-blocked-member: actual installed Pi, real Git/SDK, Source-only member patch and valid fixed-manager binding; exact blocked reason, complete observer, zero manager/consume/semantic writes, unchanged remote facts and full original/derived-body exclusion",
-          "notion-sdk-pi-blocked-materialization.test.mjs: reject false materializable metadata, missing terminal/SDK close, manager or alternate child dispatch, consume, hidden write marker and altered facts"
+          "source-materialize-blocked-member: actual installed Pi, real Git/SDK, Source-only member patch and valid fixed-manager binding; exact blocked reason, complete observer, zero manager/consume/semantic writes, complete service baseline captured after HTTP startup and before every client, only the declared empty blocks initialization, unchanged complete post-run facts and full original/derived-body exclusion",
+          "notion-sdk-pi-blocked-materialization.test.mjs: reject false materializable metadata, missing terminal/SDK close, manager or alternate child dispatch, consume, hidden write marker and altered facts; reject missing/forged/late baselines and later block/Source mutations, with isolated input-to-before mismatch negatives"
         ],
         "proof_limit": "Concrete boundary obligation. SourceMemberSelection models namespace/coverage/cardinality permission only, not member representation, SDK classification or actual dispatch. No model, finite case, expected rule or production guard is changed."
       }

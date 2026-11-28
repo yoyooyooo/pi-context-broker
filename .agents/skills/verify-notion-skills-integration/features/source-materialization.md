@@ -101,6 +101,8 @@ source-materialize-blocked-member 保留真实 Source-only 注册、固定 commi
 
 SDK 必须从真实 Git metadata 发现唯一候选，完整目录返回 blocked / CURRENT_SOURCE_WRITE_UNSUPPORTED，并保持精确 Source、member、stable Skill、commit/revision 与 scope。进程级 observer 从 Pi 加载到实际 exit0 全程闭合，SDK start/end 配对且无在途请求；管理 diagnostic、固定 manager spawn、替代管理子进程和 consume 都为0。有效 launcher 的 PID 文件保持缺失或空，原 manager Store 的 operations 集合不变；受控 Notion 全部请求为只读，Source/Skill/File/关系/投影事实逐值不变。
 
+远端不变的基线必须在真实 HTTP 服务启动完成后、任何 manager/SDK/Pi 客户端启动前保存为 before-blocked-member.json。先将这份完整服务状态与原输入逐值核对，只允许本场景已声明的缺失 blocks 属性初始化为空映射；其它启动变动必须失败。blocked-clients-start.json 绑定基线原字节 SHA 与单调时间，要求基线早于客户端边界，客户端边界早于原 Pi spawn。结束后与这份实际 before 全值比较，包含 blocks；基线缺失、伪造或采集过晚都不能通过，不能删除字段消除差异。
+
 provider wire 要排除原主文和补丁后的整篇主文，原 Pi session 不得有 selected graph 或 materialization receipt，并保留明确的阻断提示。一次普通回复完成不等于 Skill 交付；本负例不产生暖读成功证明。先在前代独立包保留 materializable 假阳性失败，再在本轮配对新包通过同一 run/evidence 入口。Source 声明级 supported 不能替代成员能力；完整 immutable 文件证明仍由 writer 的实际 manifest/blob 校验负责。
 
 ## 冷目录与真实慢请求

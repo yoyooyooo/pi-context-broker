@@ -40,12 +40,58 @@ export function blockedMaterializationFacts(original) {
   return facts;
 }
 
+// This exact case permits only the source fixture's missing blocks map
+// initialization. Any other startup change must be rejected.
+function initialServiceFacts(facts) {
+  const expected = structuredClone(facts.sample.notion);
+  if (!Object.hasOwn(expected, 'blocks')) expected.blocks = {};
+  return expected;
+}
+
+/** Capture the complete running HTTP service before any client can start. */
+export function captureBlockedMaterializationBefore(facts, service) {
+  assert.deepEqual(service.requests, [], 'The remote baseline must precede every client request');
+  assert.deepEqual(service.notion, initialServiceFacts(facts), 'Unexpected controlled service initialization');
+  return { version: 1, kind: 'blocked-service-before-clients', harness_pid: process.pid,
+    captured_monotonic_ns: process.hrtime.bigint().toString(), source_request_count: 0,
+    notion: structuredClone(service.notion) };
+}
+
+/** Bind the saved baseline before controlledManager can initialize its SDK. */
+export async function markBlockedMaterializationClients(base) {
+  const bytes = await readFile(join(base, 'before-blocked-member.json')), before = JSON.parse(bytes);
+  assert.equal(before.kind, 'blocked-service-before-clients'); assert.equal(before.harness_pid, process.pid);
+  const started = process.hrtime.bigint();
+  assert.ok(started > BigInt(before.captured_monotonic_ns));
+  await save(join(base, 'blocked-clients-start.json'), { version: 1, kind: 'blocked-clients-start',
+    harness_pid: process.pid, started_monotonic_ns: started.toString(), before_sha256: hash(bytes) });
+}
+
+async function readBlockedMaterializationBefore(base) {
+  const bytes = await readFile(join(base, 'before-blocked-member.json'));
+  return { before: JSON.parse(bytes), beforeSha256: hash(bytes), clients: await read(join(base, 'blocked-clients-start.json')) };
+}
+
 /** A complete Pi observer is necessary to prove the absence of dispatch. */
-export function assertBlockedMaterialization({ facts, events, source, git, initial, session, lifecycle, frames, process: observed, after, managerPids }) {
+export function assertBlockedMaterialization({ facts, before, beforeSha256, clients, events, source, git, initial, session, lifecycle, frames, process: observed, after, managerPids }) {
   const expected = facts.blocked_member, pid = observed.pid;
   assert.ok(expected && Number.isSafeInteger(pid) && pid > 0);
   assert.equal(facts.initial, 'source-only');
-  assert.deepEqual(after, facts.sample.notion, 'Blocked discovery changed original remote facts');
+  assert.ok(before && clients, 'The original service baseline and client boundary are required');
+  assert.deepEqual(Object.keys(before).sort(), ['captured_monotonic_ns', 'harness_pid', 'kind', 'notion', 'source_request_count', 'version']);
+  assert.deepEqual(Object.keys(clients).sort(), ['before_sha256', 'harness_pid', 'kind', 'started_monotonic_ns', 'version']);
+  assert.equal(before.version, 1); assert.equal(before.kind, 'blocked-service-before-clients');
+  assert.equal(clients.version, 1); assert.equal(clients.kind, 'blocked-clients-start');
+  assert.ok(Number.isSafeInteger(before.harness_pid) && before.harness_pid > 0);
+  assert.equal(clients.harness_pid, before.harness_pid); assert.equal(before.source_request_count, 0);
+  assert.match(beforeSha256, /^[a-f0-9]{64}$/); assert.equal(clients.before_sha256, beforeSha256);
+  assert.match(before.captured_monotonic_ns, /^[1-9][0-9]*$/);
+  assert.match(clients.started_monotonic_ns, /^[1-9][0-9]*$/);
+  assert.equal(lifecycle[0]?.event, 'spawn');
+  assert.ok(BigInt(before.captured_monotonic_ns) < BigInt(clients.started_monotonic_ns), 'The baseline was captured after clients could start');
+  assert.ok(BigInt(clients.started_monotonic_ns) < BigInt(lifecycle[0].monotonicNs), 'The baseline client boundary was recorded after Pi started');
+  assert.deepEqual(before.notion, initialServiceFacts(facts), 'The baseline differs from the full declared initial service facts');
+  assert.deepEqual(after, before.notion, 'Blocked discovery changed original remote facts');
   assert.deepEqual(facts.contributions, []);
   assert.equal(facts.sample.notion.skills.some(row => row.id === facts.members[0].legacy_page_id), false);
   assert.equal(hash(expected.original.content), expected.original.sha256);
@@ -125,7 +171,7 @@ export async function runBlockedMaterialization({ name, base, facts, first, mana
   await save(join(base, 'after-blocked-member.json'), service.notion);
   const pids = await readFile(manager.pids, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error; });
   const events = await rows(join(base, 'sdk.jsonl'));
-  const outcome = assertBlockedMaterialization({ facts, events, source: service.requests, git: git.requests,
+  const outcome = assertBlockedMaterialization({ facts, ...await readBlockedMaterializationBefore(base), events, source: service.requests, git: git.requests,
     initial: await read(join(base, 'discovery-empty-session.json')), session: final, lifecycle: rpc.lifecycle,
     frames: rpc.frames, process: processes[0], after: service.notion, managerPids: pids.trim() ? pids.trim().split('\n') : [] });
   assert.deepEqual(service.unexpected, []); assert.deepEqual(git.unexpected, []);
@@ -161,7 +207,7 @@ export async function verifyBlockedMaterializationEvidence({ base, source, event
   assert.equal(manager.initialization.metrics.length, 1); assert.equal(manager.initialization.metrics[0].total_requests, 0);
   assert.equal(Object.keys(client.empty_consumer_roots).length, 3); assert.ok(Object.values(client.empty_consumer_roots).every(value => value === 'absent'));
   const pids = await readFile(join(base, 'manager/accepted-pids.txt'), 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error; });
-  const outcome = assertBlockedMaterialization({ facts, events, source, git: await rows(join(base, 'git-http.jsonl')),
+  const outcome = assertBlockedMaterialization({ facts, ...await readBlockedMaterializationBefore(base), events, source, git: await rows(join(base, 'git-http.jsonl')),
     initial: await read(join(base, 'discovery-empty-session.json')), session: await read(join(base, 'blocked-member-final-session.json')),
     lifecycle: await read(join(base, 'blocked-member-rpc-lifecycle.json')), frames: await read(join(base, 'blocked-member-rpc.json')),
     process: receipt.process, after: await read(join(base, 'after-blocked-member.json')), managerPids: pids.trim() ? pids.trim().split('\n') : [] });
