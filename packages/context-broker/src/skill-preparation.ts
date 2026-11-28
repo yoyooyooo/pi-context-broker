@@ -59,6 +59,8 @@ export async function withPreparationDeadline<T>(parent: AbortSignal, work: (sig
  * never grants a write or changes a manager's lifetime. */
 export type SourcePreparationScope = {
   begin(): void;
+  /** Await the fixed management API without spending the Source-read balance. */
+  withManagement<T>(work: () => Promise<T>): Promise<T>;
   /** Charge before publication without discarding a late durable receipt. */
   checkpoint(): void;
 };
@@ -66,7 +68,7 @@ export type ContextPreparationBudget = {
   withSourcePreparation<T>(work: (scope: SourcePreparationScope) => Promise<T>): Promise<T>;
 };
 
-/** One Pi context shares cumulative read/Source-preparation time across all
+/** One Pi context shares cumulative read, Source and management time across all
  * accepted inputs and roots. Ordinary tools keep their original deadline. */
 export async function withContextPreparationDeadline<T>(
   parent: AbortSignal,
@@ -75,8 +77,10 @@ export async function withContextPreparationDeadline<T>(
   checkPreparationSignal(parent);
   const controller = new AbortController(), signal = AbortSignal.any([parent, controller.signal]);
   const stopped = Promise.withResolvers<never>();
-  const remaining = { read: 60_000, preparation: 180_000 }, started = performance.now();
-  let phase: "read" | "preparation" | "closed" = "read", changedAt = started;
+  const remaining = { read: 60_000, preparation: 180_000, management: 600_000 }, started = performance.now();
+  // Foreground policy is independent of the fixed manager deployment budget.
+  const maxDurationMs = remaining.read + remaining.preparation + remaining.management;
+  let phase: "read" | "preparation" | "management" | "closed" = "read", changedAt = started;
   let currentScope: SourcePreparationScope | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = () => { phase = "closed"; clearTimeout(timer); };
@@ -92,7 +96,7 @@ export async function withContextPreparationDeadline<T>(
     const now = performance.now();
     if (phase !== "closed") {
       remaining[phase] -= Math.max(0, now - changedAt);
-      if (remaining[phase] <= 0 || now - started >= 240_000) expire();
+      if (remaining[phase] <= 0 || now - started >= maxDurationMs) expire();
     }
     changedAt = now;
     return now;
@@ -100,7 +104,7 @@ export async function withContextPreparationDeadline<T>(
   const arm = (now: number) => {
     clearTimeout(timer);
     if (phase === "closed") return;
-    const delay = Math.min(remaining[phase], 240_000 - (now - started));
+    const delay = Math.min(remaining[phase], maxDurationMs - (now - started));
     if (delay <= 0) expire();
     else timer = setTimeout(expire, delay);
   };
@@ -117,6 +121,21 @@ export async function withContextPreparationDeadline<T>(
           checkPreparationSignal(signal);
           if (phase === "read") { phase = "preparation"; arm(now); }
         },
+        async withManagement<T>(operation: () => Promise<T>): Promise<T> {
+          if (currentScope !== scope || phase !== "preparation") throw preparationCancelled();
+          const now = charge();
+          checkPreparationSignal(signal);
+          phase = "management"; arm(now);
+          try { return await operation(); }
+          finally {
+            // Keep a durable receipt even when accounting expires. An old
+            // producer cannot charge or reopen the next input's scope.
+            if (currentScope === scope && phase === "management") {
+              const completedAt = charge();
+              if (phase === "management" && !signal.aborted) { phase = "preparation"; arm(completedAt); }
+            }
+          }
+        },
         checkpoint() {
           // A late operation may still retire durable facts. Its old scope
           // cannot charge or reopen a later input's accounting owner.
@@ -126,9 +145,11 @@ export async function withContextPreparationDeadline<T>(
       currentScope = scope;
       try { return await operation(scope); }
       finally {
-        const now = charge();
-        currentScope = undefined;
-        if (phase === "preparation" && !signal.aborted) { phase = "read"; arm(now); }
+        if (currentScope === scope) {
+          const now = charge();
+          currentScope = undefined;
+          if ((phase === "preparation" || phase === "management") && !signal.aborted) { phase = "read"; arm(now); }
+        }
       }
     },
   });

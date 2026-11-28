@@ -45,7 +45,7 @@ export async function materializeExplicitCandidate(input: {
   try {
     const manage = () => materializeNotionSource(request, { cwd: ctx.cwd ?? process.cwd(), library: candidate.library_id, signal,
       env: { ...process.env, ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } });
-    const response = await manage().finally(() => input.preparation?.checkpoint());
+    const response = await (input.preparation ? input.preparation.withManagement(manage) : manage());
     result = decodeSourceMaterializationReceipt(response, request, candidate.scope, value => decodeNotionContentRecord(value, source));
   } catch (error) {
     let finalization: SourceMaterializationFinalizationFailure | undefined;
