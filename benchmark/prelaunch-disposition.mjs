@@ -17,12 +17,13 @@ const fields = (value, names) => assert.deepEqual(Object.keys(value).sort(), [..
 const ref = (path, bytes) => ({ path, sha256: sha(bytes) });
 export const PRELAUNCH_DISPOSITION_FILE = 'prelaunch-disposition.json';
 
-// This compatibility is a reviewed control-flow claim, not an exception-text
-// allowlist. The legacy producer omitted the stack in episode_unresolved.
-// Its complete closure and these pre-dispatch boundaries must still be exact.
+// The legacy producer omitted the stack in episode_unresolved and keeps its
+// original execute boundary. The current exact closure uses the reviewed
+// dispatch diagnostic writer. Both retain the other pre-dispatch boundaries.
 const legacyProducer = '1fa70d6aafe99891cf2a005a842257775bcbd7f98950f330b5635cc80fc20199';
+const legacyExecute = '40c703195db0efd3c0814e61b3473569a02cf2e7053546932f34de0800f02a9c';
+const currentExecute = '9352324150f4990f3b713b901a82ab28827d812735fabf2db1ee35b395718cea';
 const boundaryFiles = {
-  'execute.mjs': '40c703195db0efd3c0814e61b3473569a02cf2e7053546932f34de0800f02a9c',
   'controller.mjs': '2ca8107a3addf624b53742e46a6d826949be3493ea93960845fea236d3bf1fdf',
   'batch.mjs': 'b172782bf916103998010dc869161eef36b005cf4cb8fdff90768846cc7dff9c',
   '../scripts/paired-resource-profile.mjs': 'a590edcebe0f6074f5f6c471c4c86d43d30aa27907f991fb0413c424c1af4ba4',
@@ -57,8 +58,10 @@ function time(value) { assert.ok(typeof value === 'string' && Number.isFinite(Da
 async function producer(controller) {
   const implementation = controller?.implementation;
   const current = await executionImplementation();
-  assert.ok(implementation?.sha256 === legacyProducer || implementation?.sha256 === current.sha256, 'PRELAUNCH_UNREVIEWED_PRODUCER');
-  for (const [path, expected] of Object.entries(boundaryFiles))
+  const legacy = implementation?.sha256 === legacyProducer;
+  assert.ok(legacy || implementation?.sha256 === current.sha256, 'PRELAUNCH_UNREVIEWED_PRODUCER');
+  const boundaries = { 'execute.mjs': legacy ? legacyExecute : currentExecute, ...boundaryFiles };
+  for (const [path, expected] of Object.entries(boundaries))
     assert.equal(implementation.files.find(item => item.path === path)?.sha256, expected, 'PRELAUNCH_UNREVIEWED_BOUNDARY: ' + path);
   // Verify bytes before importing any retained producer.
   await verifyControllerFiles(controller);
@@ -239,7 +242,8 @@ async function derive({ controlRoot, request }, { ownerAlreadyClosed = false } =
   assert.equal(review.status, 'blocked_before_subject_launch', 'PRELAUNCH_REVIEW_REQUIRED');
 
   const absentPaths = [join(controlRoot, 'lease.json'), join(environmentRoot, 'runs', started.run_id),
-    join(controlRoot, started.run_id + '.launch.json'), join(controlRoot, 'turn-control', started.run_id)];
+    join(controlRoot, started.run_id + '.launch.json'), join(controlRoot, started.run_id + '.dispatch-error.json'),
+    join(controlRoot, 'turn-control', started.run_id)];
   for (const path of absentPaths) await absent(path);
   return { version: 1, kind: 'benchmark-profile-prelaunch-disposition', request: input.reference,
     reviewed_at: value.reviewed_at, reason: value.reason, status: 'supervised_prelaunch_terminal',

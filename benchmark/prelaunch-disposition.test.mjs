@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,10 +146,29 @@ async function fixture(t) {
     request, requestValue, args: { controlRoot: old.controlRoot, request } };
 }
 
+// Keep the reference chain valid so a forged producer reaches its boundary
+// check instead of failing on a stale request, plan or work-plan file hash.
+async function rebindProducer(f, implementation) {
+  const replace = async (path, value) => {
+    const bytes = encode(value); await writeFile(path, bytes); return { path, sha256: sha(bytes) };
+  };
+  const workPlan = JSON.parse(await readFile(f.old.workPlan.path));
+  workPlan.controller.implementation = implementation;
+  const workReference = await replace(f.old.workPlan.path, workPlan);
+  const plan = structuredClone(f.old.plan), amendmentPath = plan.execution.standing_scope.amendment.path;
+  const amendment = JSON.parse(await readFile(amendmentPath)); amendment.work_plan = workReference;
+  amendment.amendment_sha256 = fingerprint({ ...amendment, amendment_sha256: null });
+  plan.execution.standing_scope.amendment = await replace(amendmentPath, amendment);
+  plan.plan_sha256 = fingerprint({ ...plan, plan_sha256: null });
+  const planReference = await replace(f.old.planReference.path, plan);
+  await replace(f.request, { ...f.requestValue, plan: planReference });
+}
 
-test('four original rows and reservation remain unknown while a real successor activation and reservation succeed', async t => {
+test('the current reviewed producer preserves four original rows and unknown usage while a real successor succeeds', async t => {
   const f = await fixture(t);
   const draft = await verifyProfilePrelaunchDispositionRequest(f.args);
+  assert.equal(draft.producer.implementation.files.find(item => item.path === 'execute.mjs').sha256,
+    '9352324150f4990f3b713b901a82ab28827d812735fabf2db1ee35b395718cea');
   assert.equal(draft.reservation_ordinal, 250);
   assert.equal(draft.accounting.model_requests, null); assert.equal(draft.accounting.business_completed, false);
   await assert.rejects(readFile(join(f.old.controlRoot, PRELAUNCH_DISPOSITION_FILE)), { code: 'ENOENT' });
@@ -181,6 +200,37 @@ test('four original rows and reservation remain unknown while a real successor a
   await assert.rejects(verifyStandingPlan(f.old.plan, { forReservation: true }), /RETIRED_OR_UNREGISTERED|PRELAUNCH_TERMINAL/);
 });
 
+test('legacy and current producer claims cannot exchange execute boundaries or accept an unreviewed execute', async t => {
+  const legacyProducer = '1fa70d6aafe99891cf2a005a842257775bcbd7f98950f330b5635cc80fc20199';
+  const legacyExecute = '40c703195db0efd3c0814e61b3473569a02cf2e7053546932f34de0800f02a9c';
+  const currentExecute = '9352324150f4990f3b713b901a82ab28827d812735fabf2db1ee35b395718cea';
+  for (const [legacy, actual, expected] of [[true, currentExecute, legacyExecute], [false, legacyExecute, currentExecute],
+    [true, 'b'.repeat(64), legacyExecute], [false, 'b'.repeat(64), currentExecute]]) {
+    const f = await fixture(t), implementation = structuredClone(f.old.plan.execution.implementation);
+    if (legacy) implementation.sha256 = legacyProducer;
+    implementation.files.find(item => item.path === 'execute.mjs').sha256 = actual;
+    await rebindProducer(f, implementation);
+    await assert.rejects(verifyProfilePrelaunchDispositionRequest(f.args), error => {
+      assert.match(error.message, /PRELAUNCH_UNREVIEWED_BOUNDARY: execute\.mjs/);
+      assert.equal(error.actual, actual); assert.equal(error.expected, expected); return true;
+    });
+    await assert.rejects(readFile(join(f.old.controlRoot, PRELAUNCH_DISPOSITION_FILE)), { code: 'ENOENT' });
+  }
+});
+
+test('an unreviewed producer and changes to the three companion boundaries stay rejected', async t => {
+  for (const path of [null, 'controller.mjs', 'batch.mjs', '../scripts/paired-resource-profile.mjs']) {
+    const f = await fixture(t), implementation = structuredClone(f.old.plan.execution.implementation);
+    if (path) implementation.files.find(item => item.path === path).sha256 = 'b'.repeat(64);
+    else implementation.sha256 = 'a'.repeat(64);
+    await rebindProducer(f, implementation);
+    await assert.rejects(verifyProfilePrelaunchDispositionRequest(f.args), error => {
+      assert.ok(error.message.includes(path ? 'PRELAUNCH_UNREVIEWED_BOUNDARY: ' + path : 'PRELAUNCH_UNREVIEWED_PRODUCER'));
+      return true;
+    });
+  }
+});
+
 test('registered successor rechecks original evidence and later launch evidence before another reservation', async t => {
   const f = await fixture(t); await disposeProfilePrelaunchFailure(f.args);
   const next = await f.attempt('next');
@@ -190,6 +240,11 @@ test('registered successor rechecks original evidence and later launch evidence 
     await writeFile(f.ledgerPath, f.originalLedger + '\n');
     await assert.rejects(verifyStandingPlan(next.plan, { forReservation: true }), /ORIGINAL_CHANGED|ORIGINALS_CHANGED|LEDGER_RECEIPT_CHANGED/);
     await writeFile(f.ledgerPath, f.originalLedger);
+    const diagnostic = join(f.old.controlRoot, f.runId + '.dispatch-error.json');
+    await writeFile(diagnostic, '{', { flag: 'wx' });
+    await assert.rejects(verifyStandingPlan(next.plan, { forReservation: true }),
+      error => error.message.includes('PRELAUNCH_EXECUTION_OR_LEASE_EXISTS: ' + diagnostic));
+    await rename(diagnostic, diagnostic + '.retained-fixture');
     const runRoot = join(f.environmentRoot, 'runs', f.runId); await mkdir(runRoot, { recursive: true });
     await assert.rejects(reserveStandingEpisode({ plan: next.plan, amendment: next.amendment, slot: next.plan.slots[0],
       runId: next.plan.id + '-001', planReference: next.planReference }), /PRELAUNCH_EXECUTION_OR_LEASE_EXISTS/);
@@ -251,13 +306,31 @@ test('crash after atomic final publication preserves one verified record and per
   assert.equal(await readFile(f.ledgerPath, 'utf8'), f.originalLedger);
 });
 
-test('post-launch artifacts, even empty roots or launch files, never receive a disposition', async t => {
-  for (const location of ['run', 'launch', 'turn']) {
+test('execution artifacts, including partial or linked dispatch diagnostics, never receive a disposition', async t => {
+  for (const location of ['run', 'launch', 'turn', 'diagnostic', 'partial_diagnostic', 'linked_diagnostic']) {
     const f = await fixture(t);
     const path = location === 'run' ? join(f.environmentRoot, 'runs', f.runId)
-      : location === 'turn' ? join(f.old.controlRoot, 'turn-control', f.runId) : join(f.old.controlRoot, f.runId + '.launch.json');
-    if (location === 'launch') await write(path, { retained: true }); else await mkdir(path, { recursive: true });
-    await assert.rejects(disposeProfilePrelaunchFailure(f.args), /PRELAUNCH_EXECUTION_OR_LEASE_EXISTS/);
+      : location === 'turn' ? join(f.old.controlRoot, 'turn-control', f.runId)
+      : join(f.old.controlRoot, f.runId + (location === 'launch' ? '.launch.json' : '.dispatch-error.json'));
+    if (location === 'run' || location === 'turn') await mkdir(path, { recursive: true });
+    else if (location === 'partial_diagnostic') await writeFile(path, '{', { flag: 'wx' });
+    else if (location === 'linked_diagnostic') await symlink(f.old.commandReference.path, path);
+    else await write(path, { retained: true });
+    await assert.rejects(disposeProfilePrelaunchFailure(f.args),
+      error => error.message.includes('PRELAUNCH_EXECUTION_OR_LEASE_EXISTS: ' + path));
+    await assert.rejects(readFile(join(f.old.controlRoot, PRELAUNCH_DISPOSITION_FILE)), { code: 'ENOENT' });
+  }
+});
+
+test('later slots and multiple starts stay outside the single first-slot disposition', async t => {
+  for (const change of ['later_slot', 'multiple_starts']) {
+    const f = await fixture(t);
+    if (change === 'later_slot') {
+      for (const row of f.rows.filter(row => row.run_id)) { row.order = 1; row.run_id = f.old.plan.id + '-002'; }
+    } else f.rows.splice(2, 0, structuredClone(f.rows[1]));
+    await writeFile(f.ledgerPath, ledgerBytes(f.rows));
+    await assert.rejects(verifyProfilePrelaunchDispositionRequest(f.args),
+      change === 'later_slot' ? /PRELAUNCH_SLOT_CHANGED/ : /PRELAUNCH_REQUIRES_SINGLE_CLOSED_FAILURE/);
     await assert.rejects(readFile(join(f.old.controlRoot, PRELAUNCH_DISPOSITION_FILE)), { code: 'ENOENT' });
   }
 });
@@ -314,7 +387,7 @@ test('new scope must use a new condition epoch and mixed recovery CLI options ar
 });
 
 
-test('a later controller replays the retained verifier despite PID reuse and activates a real successor', async t => {
+test('a later controller with changed execute bytes replays the retained verifier despite PID reuse', async t => {
   const f = await fixture(t), first = await disposeProfilePrelaunchFailure(f.args);
   const prepared = await f.attempt('prepared-next');
   const readerRoot = join(f.control, 'later-reader', 'broker');
@@ -324,7 +397,7 @@ test('a later controller replays the retained verifier despite PID reuse and act
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, await readFile(resolve(sourceRoot, 'benchmark', entry.path)), { flag: 'wx' });
   }
-  const changed = join(readerRoot, 'benchmark/models.mjs');
+  const changed = join(readerRoot, 'benchmark/execute.mjs');
   await writeFile(changed, (await readFile(changed, 'utf8')) + '\n// A later reader identity; behavior is unchanged.\n');
   const script = `
     import assert from 'node:assert/strict';
@@ -351,6 +424,8 @@ test('a later controller replays the retained verifier despite PID reuse and act
       return actualKill(pid, signal);
     };
     assert.notEqual(implementation.sha256, disposition.writer.implementation.sha256);
+    assert.notEqual(implementation.files.find(item => item.path === 'execute.mjs').sha256,
+      disposition.writer.implementation.files.find(item => item.path === 'execute.mjs').sha256);
     const reference = { path: dispositionFile, sha256: sha(await readFile(dispositionFile)) };
     await recovery.verifyProfilePrelaunchDisposition({ reference, predecessor });
     const repeated = await recovery.disposeProfilePrelaunchFailure({ controlRoot: oldRoot, request });
