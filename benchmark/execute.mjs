@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runEnvironment } from '../scripts/paired-environment.mjs';
 import { readResourceProfile, validateResourceProfileRef } from '../scripts/paired-resource-profile.mjs';
@@ -11,6 +11,42 @@ import { createFixtureTurnAdapter, freezeClarificationPolicy, selectFrozenClarif
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+
+// Retain the dispatch cause before collection can fail on a missing run root.
+// This diagnostic never establishes a terminal episode or actual usage.
+async function retainDispatchError({ environmentRoot, buildId, controlRoot, runId, launchFile, launch, expected, resourceProfile, reason, dispatchError }) {
+  const path = join(controlRoot, runId + '.dispatch-error.json');
+  const code = reason?.code;
+  const error = { ...dispatchError, ...(typeof code === 'string' || Number.isFinite(code) ? { code } : {}) };
+  try {
+    assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/, 'DISPATCH_DIAGNOSTIC_RUN_ID');
+    const owned = await realpath(environmentRoot), control = await realpath(controlRoot), within = relative(owned, control);
+    assert.ok(control === controlRoot && within && within !== '..' && !within.startsWith('..' + sep) && !isAbsolute(within),
+      'DISPATCH_DIAGNOSTIC_CONTROL_ROOT');
+    const info = await lstat(launchFile);
+    assert.ok(info.isFile() && !info.isSymbolicLink(), 'DISPATCH_DIAGNOSTIC_LAUNCH_FILE');
+    const launchBytes = await readFile(launchFile);
+    assert.equal(launchBytes.toString('utf8'), JSON.stringify(launch, null, 2) + '\n', 'DISPATCH_DIAGNOSTIC_LAUNCH_CHANGED');
+    const value = { version: 1, kind: 'benchmark-subject-dispatch-error', observed_at: new Date().toISOString(),
+      stage: 'runEnvironment', run_id: runId, environment_root: environmentRoot, build_id: buildId,
+      launch: { path: launchFile, sha256: sha(launchBytes), bytes: launchBytes.length },
+      expected: expected ? { path: expected.path, sha256: expected.sha256 } : null,
+      resource_profile: resourceProfile ?? null,
+      error: { ...error, ...(code === 'PAIRED_CAPACITY_REFUSED' && reason.capacity !== undefined ? { capacity: reason.capacity } : {}) },
+      scope: 'Controller-observed dispatch diagnostic; not terminal, accounting or no-send evidence.' };
+    const bytes = Buffer.from(JSON.stringify(value, null, 2) + '\n');
+    await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
+    return { status: 'retained', receipt: { path, sha256: sha(bytes), bytes: bytes.length } };
+  } catch (failure) {
+    const result = { status: 'unavailable', path, error: { name: failure.name, message: String(failure.message),
+      ...(typeof failure.code === 'string' || Number.isFinite(failure.code) ? { code: failure.code } : {}) } };
+    // Keep a complete terminal collectible even if this diagnostic cannot be saved.
+    // The parent stderr still receives both causes if the later collector fails.
+    process.stderr.write(JSON.stringify({ type: 'benchmark_dispatch_error_retention_failed', run_id: runId,
+      dispatch_error: error, retention_error: result.error }) + '\n');
+    return result;
+  }
+}
 
 /** Common Benchmark instrumentation must implement the controller's turn
  * contract before any fixture preparation, credential read or subject dispatch.
@@ -192,7 +228,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   catch (error) { await controller?.abandon('SUBJECT_LAUNCH_CONFIG_FAILED'); throw error; }
   const previous = Object.fromEntries(Object.keys(secrets).map(key => [key, process.env[key]]));
   Object.assign(process.env, secrets);
-  let shared, turnControl = null, dispatchError = null;
+  let shared, turnControl = null, dispatchError = null, dispatchDiagnostic = null;
   try {
     // Promise settlement is joint: a bridge failure must not hide the shared
     // process terminal or its actual request/usage artifacts.
@@ -210,6 +246,8 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     if (subjectResult.status === 'fulfilled') shared = subjectResult.value;
     else {
       dispatchError = { name: subjectResult.reason?.name ?? 'Error', message: String(subjectResult.reason?.message ?? subjectResult.reason) };
+      dispatchDiagnostic = await retainDispatchError({ environmentRoot, buildId, controlRoot, runId, launchFile, launch, expected,
+        resourceProfile: resources?.ref, reason: subjectResult.reason, dispatchError });
       try { shared = JSON.parse(await readFile(join(root, 'result.json'), 'utf8')); } catch { shared = null; }
     }
     turnControl = bridgeResult.status === 'fulfilled' ? bridgeResult.value
@@ -230,9 +268,11 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   catch (error) {
     if (error.code !== 'ENOENT') throw error;
     return { version: 1, status: 'invalid', run_id: runId, root, shared, episode: null, turn_control: turnControl, turn_runtime_build: turnRuntimeBuild, dispatch_error: dispatchError,
+      ...(dispatchDiagnostic ? { dispatch_diagnostic: dispatchDiagnostic } : {}),
       error: 'No terminal runtime receipt; actual request/cost status remains unknown', stop_batch: true };
   }
   return { version: 1, status: episode.status, run_id: runId, root, shared, episode, result_path: resultPath, turn_control: turnControl, turn_runtime_build: turnRuntimeBuild, dispatch_error: dispatchError,
+    ...(dispatchDiagnostic ? { dispatch_diagnostic: dispatchDiagnostic } : {}),
     stop_batch: dispatchError !== null || turnControl !== null && turnControl.status !== 'completed'
       || shared?.runtime_check?.status !== 'unchanged' || shared?.frozen_artifacts !== 'passed'
       || ['invalid', 'admission_rejected', 'failed', 'cancelled'].includes(episode.status) };
