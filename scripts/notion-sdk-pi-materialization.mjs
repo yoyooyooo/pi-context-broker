@@ -770,11 +770,11 @@ syncBuiltinESMExports();
       assert.ok(consumeValues(events, processes[0].pid).length > 0, 'Management receipt is not a consumption receipt');
     });
     const firstFinal = await finish('materialize');
-    if (name === 'source-materialize-cold-budget') assertColdMaterializationBudget({
+    if (name === 'source-materialize-cold-budget') console.log(JSON.stringify(assertColdMaterializationBudget({
       receipt: JSON.parse(await readFile(join(base, 'cold-budget.json'), 'utf8')), facts, source: service.requests,
       events: await rows(join(base, 'sdk.jsonl')), initial: JSON.parse(await readFile(join(base, 'discovery-empty-session.json'), 'utf8')),
       session: firstFinal, piPid: processes[0].pid,
-    });
+    })));
     if (name === 'source-materialize-cache-upgrade') await save(join(base, 'cache-upgrade-result.json'),
       assertCacheUpgradeEvidence({ ...readCacheUpgradeEvidence(base), events: await rows(join(base, 'sdk.jsonl')), source: service.requests, piPid: processes[0].pid }));
     const initialManagement = management(await rows(join(base, 'sdk.jsonl'))).filter(row => row.event === 'result');

@@ -1774,8 +1774,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const source = sources[0]!, lookup = sourceMemberLookupQuery(request.query, source);
       if (!lookup) continue;
       if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceError("SOURCE_CANCELLED", source.id);
-      if (source.enabled !== false && !source.activation?.offline && !source.discovery?.offline) preparation?.begin();
-      const members = await discoverNotionSourceMembers(source, ctx.cwd ?? process.cwd(), lookup, signal)
+      const discoveryPreparation = source.enabled !== false && !source.activation?.offline && !source.discovery?.offline ? preparation : undefined;
+      discoveryPreparation?.begin();
+      const discover = () => discoverNotionSourceMembers(source, ctx.cwd ?? process.cwd(), lookup, signal);
+      const members = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discover) : discover())
         .finally(() => preparation?.checkpoint());
       checkPreparationSignal(signal);
       const member = matchSourceMemberCandidate(request.query, source, members.candidates, members.coverage);
@@ -2038,8 +2040,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             const locator = root.locator;
             const query = preparationQuery(authority, root);
             if (!query) throw error;
-            if (!boundSource.activation?.offline && !boundSource.discovery?.offline) preparation?.begin();
-            const discovered = await discoverNotionSourceMembers(boundSource, ctx.cwd ?? process.cwd(), locator.skill_id, signal)
+            const discoveryPreparation = !boundSource.activation?.offline && !boundSource.discovery?.offline ? preparation : undefined;
+            discoveryPreparation?.begin();
+            const discover = () => discoverNotionSourceMembers(boundSource, ctx.cwd ?? process.cwd(), locator.skill_id, signal);
+            const discovered = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discover) : discover())
               .finally(() => preparation?.checkpoint());
             checkPreparationSignal(signal);
             if (discovered.scope !== root.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
@@ -2055,7 +2059,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
               continue;
             }
             if (purpose !== "use") continue;
-            const required = await discoverNotionRequiredSourceMembers(boundSource, ctx.cwd ?? process.cwd(), root, signal)
+            const discoverRequired = () => discoverNotionRequiredSourceMembers(boundSource, ctx.cwd ?? process.cwd(), root, signal);
+            const required = await (discoveryPreparation ? discoveryPreparation.withDiscovery(discoverRequired) : discoverRequired())
               .finally(() => preparation?.checkpoint());
             checkPreparationSignal(signal);
             if (!required.candidates.length) continue;

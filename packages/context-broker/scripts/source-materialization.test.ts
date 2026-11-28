@@ -161,6 +161,7 @@ test("a direct member starts preparation accounting only after literal, session 
     budget.withSourcePreparation(async scope => {
       const preparation = {
         begin() { begins++; scope.begin(); },
+        withDiscovery<T>(work: () => Promise<T>) { return scope.withDiscovery(work); },
         withManagement<T>(work: () => Promise<T>) { management++; return scope.withManagement(work); },
         checkpoint() { scope.checkpoint(); },
       };

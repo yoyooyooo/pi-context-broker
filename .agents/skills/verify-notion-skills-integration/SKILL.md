@@ -158,7 +158,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 
 首次 `$` 引用、Source readiness、管理 binding、receipt、前台预算或失效交接改变时，执行 [Source 物化](features/source-materialization.md) 的 source-materialize-legacy、source-materialize-first、source-materialize-legacy-source、source-materialize-growth、source-materialize-native-root，以及独立取消迟到场景 source-materialize-cancel-late、冷目录慢请求场景 source-materialize-cold-budget，以及混合旧目录升级场景 source-materialize-cache-upgrade，以及成员能力阻断负例 source-materialize-blocked-member。同包固定 manager 实际落地后必须再走普通 consume，核完整 provider 正文、五分钟新 PID 和独立空客户端；projection 调用为 0。模型/代码围栏美元名不授权管理，取消不让迟到结果发布。对应 authority/receipt 单测和 CLI 原未知写故障回放分别保留，管理回执不充当消费证明。
 
-前台预算变更须由同一 cold-budget 场景证明真实发现与管理串联超过旧 180 秒、整次冷输入超过旧 240 秒，随后完成普通 consume、provider 全文和新 PID 暖读。read/source/management 共用 60/180/600 秒累计额度，context 总墙钟为 840 秒；精确分桶由 core 回归验证，实际 Pi 逐原件核 SDK、manager request/PID/close 和 HTTP 时序。取消迟到仍沿原独立场景；TLC 的 owner/发布抽象不能代替定量时长，具体 statechart 和证据边界见 Source 物化页。
+前台预算变更须由同一 cold-budget 场景证明慢发现之后仍能完成慢目录刷新和慢正文读取：实际发现加 finalization 跨过旧共享 180 秒，发现与管理也串联超过 180 秒，整次冷输入超过旧 240 秒，随后核普通 consume、完整根与 Requires provider 正文及新 PID 暖读。read/discovery/finalization/management 分别共用 60/180/180/600 秒累计额度，context 总墙钟仍为独立的 840 秒；不因 root、Requires、queued input 或阶段切换而续期。精确分桶由 core 回归验证，实际 Pi 逐原件核 SDK、manager request/PID/close 和 HTTP 时序；只有 ready 后的实际 SDK list/consume 才能证明 post 阶段，管理 API 收尾的同路径 GET 单列并立即释放。取消迟到仍沿原独立场景；TLC 的 owner/发布抽象不能代替定量时长，具体 statechart 和证据边界见 Source 物化页。
 
 首引用前先核完整本地 `$` 目录与实际来源选择；同名本地对象保留，Notion 目标使用有效 namespace 的普通 qualified 引用。日用启动 shell/PATH 与实际 Git 身份一并取证，具体前件见该页；本地正文成功不等于 Notion 物化成功。
 
