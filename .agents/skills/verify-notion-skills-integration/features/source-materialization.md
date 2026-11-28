@@ -109,9 +109,13 @@ provider wire 要排除原主文和补丁后的整篇主文，原 Pi session 不
 
 `source-materialize-cold-budget` 使用独立的 legacy-source 远端事实与空客户端，第一次用户消息就是 `$lazy-root`。提交前不得执行 `notion_list`、consume 或来源发现，也不得产生 Notion HTTP。保留原五例的只读工具权限检查；这些先查目录的用例不能代替本例。
 
-使用现有 HTTP fixture 的精确 hold，依次将目录的三个请求各延迟 12 秒、首次 consume 的 owner GET 延迟 12 秒、source-members 的 root GET 延迟 14 秒。单个请求保持低于 transport 期限，产品时钟、60/180/240 秒上限与 SDK 实现不改。核实际 SDK operation ID、HTTP 开始/释放/结束时间和初始 native session，要求 manager 开始之前累计已经超过 60 秒；再证明管理回执之后确实完成完整 catalog 和正常 consume，完整根与 Requires 正文进入 provider。不能只用一段总耗时或假时钟证明这条接线。
+沿现有 HTTP fixture 的精确 hold 复现发现与管理串联超过旧期限的路径。首次目录三个 GET 各等 12 秒，初次 consume 的 owner GET 等 12 秒，保留原 48 秒冷读。source-members 的 root GET 等 14 秒，children 和 Skills、Files、Records、Sources 四个 schema GET 各等 20 秒，共 114 秒。随后固定 manager 自己的 root、children、Skills 和 Files schema GET 各等 20 秒，共 80 秒。这些请求由真实 SDK 和原 manager 发出，单次延迟低于 CLI 默认 30 秒传输期限；不改 SDK、产品时钟、manager 配置或 HTTP 事实。两段准备延迟合计 194 秒，全部延迟合计 242 秒，分别超过旧共享 180 秒准备额度和旧 240 秒总上限。
 
-保存 `cold-budget.json` 与全部原始账本，沿同一 evidence 入口重算；之后仍执行不同 PID 的 0 Notion / 0 Git / 0 management 暖读和独立空客户端。旧包应在同一场景中保留读取超时失败，新包另起输出目录，不能覆盖旧结果。现役 host 单测另覆盖管理后慢目录和慢 consume、多个 root/queued input 累计额度、找不到候选、Stop/session switch 及定时器未调度的到期边界。
+通过须由原件重算实际时间。`cold-budget.json` version 2 将消费者 hold 绑定原 SDK ID，将管理 hold 绑定原 request_id 与 manager PID。逐条核 HTTP 开始、到达、释放、结束和实际 close；source-members 必须完整结束后才出现唯一管理请求。原 manager 的实际 spawn/close、完整 stdout/stderr 和已验证 ready 回执由同一 evidence 入口联合核对。发现开始到原 manager close 的真实跨度必须超过 180 秒，整次 prompt 到完成必须超过 240 秒；不能只相加计划延迟来声称复现。管理诊断区间须小于 600 秒，可见初次读取小于 60 秒，发现至最终 consume 的跨度扣除原 manager 实际生命周期后小于 180 秒，整次观测小于 840 秒。
+
+这些观测区间不等同于产品内部的精确计费时点。管理诊断包含边界前后的少量工作；manager 子进程生命周期也不包含公开管理 API 的全部收尾。精确累计、切换和到期边界由现役 core 时间回归证明。真实 Pi 本例必须继续完成管理后的完整 catalog、普通 consume 和完整根与 Requires 的 provider 正文，不能拿 manager ready 代替交付。原 360 秒 RPC 外层期限保留，它只容纳这次受控延迟组合，不证明实际等待了 600 或 840 秒；若外层先结束，保留原失败和未结清管理事实，不推断产品已耗尽自己的额度。
+
+保存全部原始账本，沿同一 evidence 入口独立复算，拒绝错 SDK/request/PID、重复请求、未闭合 manager、过短延迟或过期区间。随后仍执行同一 case 的不同 PID、五分钟内 0 Notion / 0 Git / 0 management 暖读，以及独立空客户端。旧包失败与新包结果使用不同输出目录，旧 Store 和失败标签不改。现役 core 回归另覆盖管理后慢目录与慢 consume、多 root/queued input 累计、找不到候选、Stop/session switch、重入/迟到 scope，以及过期 timer 尚未执行的边界。
 
 ## 升级后的混合目录 Store
 
@@ -129,11 +133,34 @@ Broker 再核当前 request/library/target/authorization_root、phase/code 及�
 
 ## 前台预算与超时
 
-每次 Pi context 共用累计 60 秒普通读取额度。真实字面 `$` 经当前输入、精确来源和目标守卫进入按需物化时，从定向 source-members 开始，到受原授权约束的管理请求、回执、完整目录持久化和正常 consume 完成，共用累计 180 秒 Source 准备额度。初次完整目录与首次普通 consume、准备结束后的 task prompt 和 active restoration 使用剩余普通读取额度。预算能力不授予远端写权限；没有合格修复路径的普通 read/use/model tool 保持原期限。同一 context 的多个 root 和 queued inputs 共用两份额度，不能按 root、SDK 调用或阶段重新计满，绝对上限仍为 240 秒。固定 manager 的服务端时限和未知派发恢复由它自己的配置与 Store 决定。
+每次 Pi context 共用三个累计额度和一个总墙钟上限：
 
-按原 SDK/management 事件 ID 与单调时间分别记录普通准备、管理等待、目录重建和 consume 的开始、结束、取消或超时。慢 manager 完成后必须仍通过完整目录和 provider 正文断言，不能把 manager ready 当作交付成功。每次阶段切换及最终返回都须检查已耗时间，即使过期 timer 尚未执行。现役物化 runner 的 RPC 等待为 360 秒，大于产品 240 秒上限；外层测试驱动不能先于产品终止并误报其行为。
+| 状态 | 累计额度 | 计入的工作 |
+| --- | --- | --- |
+| read | 60 秒 | 初次完整目录、首次普通 consume、准备结束后的 task prompt 与 active restoration |
+| source | 180 秒 | 定向 source-members，以及管理返回后的 receipt 校验、完整 catalog 和普通 consume |
+| management | 600 秒 | 当前有效 Source scope 内一次公开 management API 的等待，包括该 API 内部的消费者 load/invalidate 收尾 |
+| context | 840 秒 | 从本 context 开始经过的全部墙钟时间 |
 
-超时和 Stop 只结束前台等待及旧 session 的发布资格，不终止已接纳 writer、不创建新 request、不删除 pending。迟到回执可以失效共享事实，不能追加到已取消 session、激活选择或进入 provider。未捕获 manager exit 时如实记录未捕获；PID 消失不能推断 exit 0。预算回放和真实 Pi 原始时序分别报告，有限模型不宣称穷尽墙钟或 Promise 调度。
+真实字面 `$` 必须先通过当前输入、精确来源和目标守卫，才可进入 Source 准备；预算能力本身不授权远端写。management 只可由当前有效 Source scope 的 lexical `withManagement` 进入，退出后回到 source 并继续扣原余额。普通 read/use/model tool 不获得管理额度。同一 context 的多个 root 和 queued inputs 共用三份余额，重复 begin、阶段切换或第二个 manager 都不续期。重叠、重入、已返回或迟到的 scope 不得取得另一个 owner 的管理额度。
+
+```mermaid
+stateDiagram-v2
+    direction TB
+    [*] --> read
+    read --> source: 当前输入的 Source 准备
+    source --> management: 当前 scope 的 withManagement
+    management --> source: 同一调用完成或抛错
+    source --> read: 当前 Source scope 返回
+    read --> closed: context 返回或取消到期
+    source --> closed: context 取消或到期
+    management --> closed: context 取消或到期
+    closed --> [*]
+```
+
+每次切换和最终返回都检查已耗时间，即使 timer 回调尚未运行。实现将总墙钟限制为 840 秒；源码回归覆盖三个桶的累计、600 秒管理到期，以及 timer 尚未运行时的扣账守卫。真实 Pi 的 cold-budget 场景证明发现与管理实际串联、原 manager 结清后的完整消费与新进程复用。TLC 继续验证取消、owner 和发布资格的抽象，不把 SelectionGraph 的字节预算或有限模型结果当作墙钟、Promise 调度或精确分桶证明。
+
+超时和 Stop 只结束前台等待及旧 session 的发布资格，不终止已接纳 writer、不创建新 request、不删除 pending。固定 manager 的服务端时限与未知派发恢复仍由它自己的配置和 Store 决定。迟到回执可以失效共享事实，不能追加到已取消 session、激活选择或进入 provider。未捕获 manager exit 时如实记录未捕获；PID 消失不能推断 exit 0。原独立 cancel-late 场景继续核实际取消、session 替换、原 writer 迟到结清和后续正常消费。
 
 ## 真实取消与迟到结果
 

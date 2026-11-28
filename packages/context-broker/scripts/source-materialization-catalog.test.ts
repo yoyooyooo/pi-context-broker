@@ -300,7 +300,7 @@ test.each(["management", "catalog", "consume"] as const)("a stalled %s producer 
   try {
     pending = session.turn("Use $root@notion");
     await entered.promise;
-    clock.advance(phase === "management" ? 180_001 : phase === "catalog" ? 60_001 : 127_001);
+    clock.advance(phase === "management" ? 600_001 : phase === "catalog" ? 60_001 : 180_001);
     const result = await pending;
     expect(result.aborted).toBe(false);
     expect(JSON.stringify(result.payload)).toContain("SOURCE_PREPARATION_TIMEOUT");
@@ -330,13 +330,13 @@ test("directed discovery and complete catalog share the materialization episode 
   } finally { clock.restore(); await session.close(); }
 });
 
-test("multiple explicit roots share one preparation allowance and cannot dispatch a root after it expires", async () => {
+test("multiple explicit roots share one management allowance and cannot dispatch a root after it expires", async () => {
   const { session, trace, setManagement } = await fixture(["root", "second", "independent"]);
   const clock = preparationClock(), targets: string[] = [];
-  setManagement(async request => { targets.push(request.target.expected_skill_id); clock.advance(targets.length === 1 ? 100_000 : 81_000); });
+  setManagement(async request => { targets.push(request.target.expected_skill_id); clock.advance(targets.length === 1 ? 350_000 : 250_001); });
   try {
     const result = await session.turn("Use $root@notion $second@notion $independent@notion");
-    expect(clock.elapsed()).toBe(181_000);
+    expect(clock.elapsed()).toBe(600_001);
     expect(targets).toEqual(["entry", "second"]);
     expect(trace.filter(value => value === "management")).toHaveLength(2);
     expect(JSON.stringify(result.payload)).toContain("SOURCE_PREPARATION_TIMEOUT");
@@ -400,8 +400,9 @@ test("an expired manager response still reaches fact invalidation while the cont
   try {
     await expect(withContextPreparationDeadline(parent.signal, async (signal, budget) => budget.withSourcePreparation(async preparation => {
       preparation.begin();
-      const receipt = await (async () => { clock.jump(180_001); return "durable-receipt"; })()
-        .finally(() => preparation.checkpoint());
+      const receipt = await preparation.withManagement(async () => {
+        clock.jump(600_001); return "durable-receipt";
+      });
       receipts.push(receipt); expect(signal.aborted).toBe(true); received.resolve();
     }))).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
     await received.promise;
@@ -503,8 +504,12 @@ test("cold literal materialization keeps discovery, catalog persistence and fina
 test.each(["discovery", "management", "catalog", "consume"] as const)("an overdue %s response cannot publish before its timer callback runs", async phase => {
   const { session, trace, setManagement, setRefresh, setConsume } = await fixture();
   const clock = preparationClock(), discover = session.f.state.sourceMembers;
-  if (phase === "discovery") session.f.state.sourceMembers = async input => { clock.jump(180_001); return discover(input); };
-  setManagement(async () => { if (phase === "management") clock.jump(180_001); else if (phase !== "discovery") clock.advance(100_000); });
+  session.f.state.sourceMembers = async input => {
+    if (phase === "discovery") clock.jump(180_001);
+    else if (phase === "catalog" || phase === "consume") clock.advance(100_000);
+    return discover(input);
+  };
+  setManagement(async () => { if (phase === "management") clock.jump(600_001); else if (phase !== "discovery") clock.advance(100_000); });
   if (phase === "catalog") setRefresh(async () => { clock.jump(80_001); });
   if (phase === "consume") setConsume(async () => { clock.jump(80_001); });
   try {
@@ -579,6 +584,8 @@ test("a returned scope cannot begin or expire the next input through a late chec
       await budget.withSourcePreparation(async preparation => { previous = preparation; preparation.begin(); });
       if (!previous) throw new Error("Expected a completed preparation scope");
       expect(() => previous!.begin()).toThrow("Skill preparation cancelled");
+      await expect(previous.withManagement(async () => { throw new Error("Returned scope dispatched"); }))
+        .rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
       await budget.withSourcePreparation(async preparation => {
         preparation.begin(); clock.jump(180_001);
         previous!.checkpoint();
@@ -620,4 +627,113 @@ test("an already-ready member discovered from a literal miss still completes its
     expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
     expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
   } finally { clock.restore(); await session.close(); }
+});
+
+
+test("a 121s discovery and 163s management both finish before complete body publication", async () => {
+  const { session, trace, candidate, scope, setManagement } = await fixture();
+  const clock = preparationClock();
+  // F03 observed 120833ms discovery and 163076ms management; use whole-second approximations.
+  session.f.state.sourceMembers = async () => {
+    trace.push("source-discovery"); clock.advance(121_000);
+    return { version: 1, library_id: session.f.source.library, scope, coverage: "complete", failures: [], effects: { remote_writes: "none" },
+      candidates: [{ ...candidate, name: "fresh-member", alias: "fresh-member", record: undefined }] };
+  };
+  setManagement(async () => { clock.advance(163_000); });
+  try {
+    const result = await session.turn("Use $fresh-member@notion", [], undefined, undefined, [], { status: 200 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const payload = JSON.stringify(result.payload);
+    console.log("source-preparation-121-163-observation", JSON.stringify({
+      elapsed_ms: clock.elapsed(), trace, management_count: trace.filter(value => value === "management").length,
+      ready_consume_count: trace.filter(value => value === "consume").length,
+      sdk_consume_count: session.f.calls.filter(call => call.operation === "consume").length,
+      timeout: payload.includes("SOURCE_PREPARATION_TIMEOUT"),
+      root_body: payload.includes("Complete root instructions A."),
+      required_body: payload.includes("Complete required instructions A."),
+      selected_scopes: session.selected()?.scopes.size ?? 0,
+    }));
+    expect(clock.elapsed()).toBe(284_000);
+    expect(trace.filter(value => value === "management")).toHaveLength(1);
+    expect(payload).not.toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(trace).toEqual(["source-discovery", "management", "catalog", "consume"]);
+    expect(payload).toContain("Complete root instructions A.");
+    expect(payload).toContain("Complete required instructions A.");
+    expect(session.selected()?.scopes.size).toBe(1);
+  } finally { clock.restore(); await session.close(); }
+});
+
+test("management resumes the remaining Source allowance without replenishing it", async () => {
+  const clock = preparationClock();
+  try {
+    await expect(withContextPreparationDeadline(new AbortController().signal, async (signal, budget) =>
+      budget.withSourcePreparation(async preparation => {
+        preparation.begin(); clock.advance(100_000);
+        await preparation.withManagement(async () => { clock.advance(163_000); });
+        expect(signal.aborted).toBe(false);
+        clock.advance(80_001);
+      }))).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+    expect(clock.elapsed()).toBe(343_001);
+  } finally { clock.restore(); }
+});
+
+test("queued inputs and repeated begin calls share one cumulative management allowance", async () => {
+  const clock = preparationClock(); let entered = 0;
+  try {
+    await expect(withContextPreparationDeadline(new AbortController().signal, async (_signal, budget) => {
+      await budget.withSourcePreparation(async preparation => {
+        entered++; preparation.begin();
+        await preparation.withManagement(async () => {
+          clock.advance(300_000); preparation.begin(); clock.advance(50_000);
+        });
+      });
+      await budget.withSourcePreparation(async preparation => {
+        entered++; preparation.begin();
+        await preparation.withManagement(async () => { clock.advance(250_001); });
+      });
+      await budget.withSourcePreparation(async preparation => { preparation.begin(); entered++; });
+    })).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+    expect(entered).toBe(2); expect(clock.elapsed()).toBe(600_001);
+  } finally { clock.restore(); }
+});
+
+test("management requires the current Source scope and rejects nested or overlapping producers", async () => {
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(); let dispatched = 0;
+  await withContextPreparationDeadline(new AbortController().signal, async (_signal, budget) =>
+    budget.withSourcePreparation(async preparation => {
+      const forbidden = async () => { dispatched++; };
+      await expect(preparation.withManagement(forbidden)).rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+      preparation.begin();
+      const pending = preparation.withManagement(async () => {
+        await expect(preparation.withManagement(forbidden)).rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+        entered.resolve(); await release.promise;
+      });
+      try {
+        await entered.promise;
+        await expect(preparation.withManagement(forbidden)).rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+      } finally { release.resolve(); await pending; }
+    }));
+  expect(dispatched).toBe(0);
+});
+
+test("a late management finally keeps its receipt without charging the next input's scope", async () => {
+  const clock = preparationClock(), release = Promise.withResolvers<void>();
+  let pending: Promise<string> | undefined;
+  try {
+    await expect(withContextPreparationDeadline(new AbortController().signal, async (signal, budget) => {
+      await budget.withSourcePreparation(async preparation => {
+        preparation.begin();
+        pending = preparation.withManagement(async () => { await release.promise; return "durable-receipt"; });
+      });
+      await budget.withSourcePreparation(async preparation => {
+        preparation.begin(); clock.jump(180_001);
+        release.resolve();
+        expect(await pending).toBe("durable-receipt");
+        expect(signal.aborted).toBe(false);
+        preparation.checkpoint();
+        expect(signal.aborted).toBe(true);
+      });
+    })).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+  } finally { release.resolve(); await pending; clock.restore(); }
 });

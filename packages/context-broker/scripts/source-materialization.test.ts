@@ -156,17 +156,24 @@ test("a preflight rejection still reaches receipt invalidation without authorizi
 
 
 test("a direct member starts preparation accounting only after literal, session and readiness guards", async () => {
-  const f = await fixture(); let begins = 0, checkpoints = 0;
-  const preparation = { begin() { begins++; }, checkpoint() { checkpoints++; } };
-  for (const text of ["`$entry@notion`", "> $entry@notion", "entry@notion"])
-    await expect(f.api.materializeExplicitCandidate({ ...f.input(text), preparation })).rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_UNAUTHORIZED" });
-  await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, candidate: { ...f.candidate, readiness: "blocked" } }))
-    .rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_BLOCKED" });
-  await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, ctx: { ...f.ctx, cwd: f.root + "/other" } }))
-    .rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
-  expect(begins).toBe(0); expect(checkpoints).toBe(0); expect(f.controlled.calls).toEqual([]);
-  await f.api.materializeExplicitCandidate({ ...f.input(), preparation });
-  expect(begins).toBe(1); expect(checkpoints).toBe(1); expect(f.controlled.calls).toHaveLength(1);
+  const f = await fixture(); let begins = 0, management = 0;
+  await withContextPreparationDeadline(new AbortController().signal, async (_signal, budget) =>
+    budget.withSourcePreparation(async scope => {
+      const preparation = {
+        begin() { begins++; scope.begin(); },
+        withManagement<T>(work: () => Promise<T>) { management++; return scope.withManagement(work); },
+        checkpoint() { scope.checkpoint(); },
+      };
+      for (const text of ["`$entry@notion`", "> $entry@notion", "entry@notion"])
+        await expect(f.api.materializeExplicitCandidate({ ...f.input(text), preparation })).rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_UNAUTHORIZED" });
+      await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, candidate: { ...f.candidate, readiness: "blocked" } }))
+        .rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_BLOCKED" });
+      await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, ctx: { ...f.ctx, cwd: f.root + "/other" } }))
+        .rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+      expect(begins).toBe(0); expect(management).toBe(0); expect(f.controlled.calls).toEqual([]);
+      await f.api.materializeExplicitCandidate({ ...f.input(), preparation });
+      expect(begins).toBe(1); expect(management).toBe(1); expect(f.controlled.calls).toHaveLength(1);
+    }));
 });
 
 function finalizationError(request: SourceMaterializationRequest, receipt: SourceMaterializationReceipt, code = "STATE_CORRUPT") {
@@ -250,13 +257,13 @@ test("a required-member finalization fact must retain the exact physical authori
   expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
 });
 
-test("the real preparation checkpoint expires the budget without erasing verified local-failure facts", async () => {
+test("the real management exit expires the budget without erasing verified local-failure facts", async () => {
   const f = await fixture();
   let now = 0, retained: unknown;
   const clock = spyOn(performance, "now").mockImplementation(() => now);
   const settled = Promise.withResolvers<void>();
   try {
-    f.controlled.configure(async request => { now = 180_001; throw finalizationError(request, f.ready(request)); });
+    f.controlled.configure(async request => { now = 600_001; throw finalizationError(request, f.ready(request)); });
     await expect(withContextPreparationDeadline(new AbortController().signal, async (signal, budget) =>
       budget.withSourcePreparation(async preparation => {
         try { return await f.api.materializeExplicitCandidate({ ...f.input(), signal, preparation }); }
