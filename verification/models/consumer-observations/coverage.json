@@ -638,6 +638,16 @@
           "notion-sdk-pi-cache-upgrade.test.mjs and notion-sdk-pi.test.mjs: reject missing retirement/fence, changed canaries, detached snapshots, incomplete catalog, early consume, missing/tampered stderr and false manager exits"
         ],
         "proof_limit": "Concrete storage-upgrade and management-boundary obligations. Existing TLA models contain no manager transport, local finalization or SQLite schema variables. No model/config/view, finite bound, case, independent expected rule or production mutation target changes; all existing formal and mutation gates remain required."
+      },
+      "member_capability": {
+        "counterexample": "The real missing member had an authored member_patch. Declaration-only discovery reported materializable while the unchanged fixed-Git writer rejected its transformed bytes. The original failed Pi run remains failed.",
+        "owners": "The paired CLI classifies known per-member Git representation and keeps full manifest/blob validation in prepare. Broker source-materialization.ts rejects blocked/unknown before management diagnostics or dispatch; ready physical members retain ordinary reading.",
+        "replays": [
+          "source-materialization.test.ts: readiness guard admits no manager call",
+          "source-materialize-blocked-member: actual installed Pi, real Git/SDK, Source-only member patch and valid fixed-manager binding; exact blocked reason, complete observer, zero manager/consume/semantic writes, unchanged remote facts and full original/derived-body exclusion",
+          "notion-sdk-pi-blocked-materialization.test.mjs: reject false materializable metadata, missing terminal/SDK close, manager or alternate child dispatch, consume, hidden write marker and altered facts"
+        ],
+        "proof_limit": "Concrete boundary obligation. SourceMemberSelection models namespace/coverage/cardinality permission only, not member representation, SDK classification or actual dispatch. No model, finite case, expected rule or production guard is changed."
       }
     }
   },

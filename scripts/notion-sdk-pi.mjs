@@ -169,7 +169,9 @@ async function inspect(options) {
     fixture: { path: options['--fixture'], sha256: hash(await readFile(options['--fixture'])) },
     source_http_helper: { path: helper, sha256: hash(await readFile(helper)) }, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))),
     materialization_driver: { path: fileURLToPath(new URL('./notion-sdk-pi-materialization.mjs', import.meta.url)),
-      sha256: hash(await readFile(new URL('./notion-sdk-pi-materialization.mjs', import.meta.url))) } } };
+      sha256: hash(await readFile(new URL('./notion-sdk-pi-materialization.mjs', import.meta.url))) },
+    blocked_materialization_driver: { path: fileURLToPath(new URL('./notion-sdk-pi-blocked-materialization.mjs', import.meta.url)),
+      sha256: hash(await readFile(new URL('./notion-sdk-pi-blocked-materialization.mjs', import.meta.url))) } } };
 }
 
 function lifecycleObserver(api) {
@@ -731,6 +733,10 @@ export async function verifyEvidence(directory) {
     if (materializationScenarios.includes(entry.name)) {
       assert.ok(isAbsolute(result.identity.materialization_driver?.path ?? ''));
       assert.match(result.identity.materialization_driver?.sha256 ?? '', /^[a-f0-9]{64}$/);
+      if (entry.name === 'source-materialize-blocked-member') {
+        assert.ok(isAbsolute(result.identity.blocked_materialization_driver?.path ?? ''));
+        assert.match(result.identity.blocked_materialization_driver?.sha256 ?? '', /^[a-f0-9]{64}$/);
+      }
       await verifyMaterializationEvidence({ base, entry, source, events, proofs, assertWireSources });
       continue;
     }

@@ -9,19 +9,21 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { runColdMaterializationPrompt, assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
 import { seedCacheUpgrade, readCacheUpgradeEvidence, assertCacheUpgradeEvidence } from './notion-sdk-pi-cache-upgrade.mjs';
+import { blockedMaterializationScenario, blockedMaterializationFacts, runBlockedMaterialization, verifyBlockedMaterializationEvidence } from './notion-sdk-pi-blocked-materialization.mjs';
 
 // These cases are part of notion-sdk-pi, with the same installed artifact and
 // actual Pi provider serializer. There is no alternate test runner or mock SDK.
 export const materializationScenarios = Object.freeze([
   'source-materialize-legacy', 'source-materialize-first',
   'source-materialize-legacy-source', 'source-materialize-growth',
-  'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget', 'source-materialize-cache-upgrade',
+  'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget', 'source-materialize-cache-upgrade', blockedMaterializationScenario,
 ]);
 const initialFor = name => ({
   'source-materialize-legacy': 'legacy-members', 'source-materialize-first': 'source-only',
   'source-materialize-legacy-source': 'legacy-source', 'source-materialize-growth': 'manifest-growth',
   'source-materialize-native-root': 'native-root', 'source-materialize-cancel-late': 'source-only',
   'source-materialize-cold-budget': 'legacy-source', 'source-materialize-cache-upgrade': 'legacy-source',
+  [blockedMaterializationScenario]: 'source-only',
 })[name];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -587,7 +589,8 @@ export async function runMaterializationScenario(name, info, out, helpers) {
   const git = await fixture.startSdkGitFixture(info.fixture.source_materialization.repository, join(base, 'git-http.jsonl'));
   let service, provider, rpc, failure;
   const wire = [], proofs = [], steps = [], processes = [];
-  const facts = fixture.materializationServiceFacts(info.fixture, git.url, initialFor(name));
+  const initialFacts = fixture.materializationServiceFacts(info.fixture, git.url, initialFor(name));
+  const facts = name === blockedMaterializationScenario ? blockedMaterializationFacts(initialFacts) : initialFacts;
   const present = facts.native_root ? [facts.native_root.content, facts.expected.root, facts.expected.required] : facts.initial === 'manifest-growth' ? [facts.expected.required]
     : facts.initial === 'source-only' ? [facts.expected.root] : [facts.expected.root, facts.expected.required];
   const absent = [facts.expected.sibling, '# Old generated reading projection\n\nThis is not the original Skill.\n',
@@ -637,6 +640,10 @@ const emit = (kind, event) => {
   try{observeCacheUpgrade(process.env.CURRENT_CACHE_UPGRADE_CONFIG,kind,row);}
   catch(error){appendFileSync(process.env.CURRENT_SDK_EVENTS,JSON.stringify({kind:'cache_upgrade_observer_error',observer_pid:process.pid,error:error.message})+'\\n');}
 };
+if(process.env.CURRENT_BLOCKED_MATERIALIZATION==='1'){
+  emit('materialization_observer',{event:'start'});
+  process.once('exit',code=>emit('materialization_observer',{event:'end',code,active_sdk_ids:[...active]}));
+}
 for(const topic of ['context-broker.notion-sdk','context-broker.notion-sdk-result','context-broker.notion-materialization'])
   channel(topic).subscribe(event=>{if(topic==='context-broker.notion-sdk'){if(event.event==='start')active.add(event.id);else if(event.event==='end')active.delete(event.id);}emit(topic,event);});
 for(const api of ['spawn','spawnSync','exec','execSync','execFile','execFileSync','fork']){
@@ -685,6 +692,7 @@ syncBuiltinESMExports();
         CURRENT_SDK_EVENTS: join(base, 'sdk.jsonl'), CURRENT_NATIVE_EVENTS: join(base, 'native.jsonl'), CURRENT_CONTROL: control,
         BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl,
         CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base,
+        ...(name === blockedMaterializationScenario ? { CURRENT_BLOCKED_MATERIALIZATION: '1' } : {}),
         ...(name === 'source-materialize-cache-upgrade' && number === 1 ? { CURRENT_CACHE_UPGRADE_CONFIG: join(base, 'cache-upgrade-config.json') } : {}) });
       await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: source.library });
@@ -699,7 +707,10 @@ syncBuiltinESMExports();
       await save(join(root, 'launch.json'), { host: info.host, args, cwd: root, source, empty_consumer_roots: empty,
         ...(localCollision ? { local_collision: localCollision, config_file: config, config_sha256: hash(await readFile(config)) } : {}),
         consumer_credential_sha256: hash(info.fixtureEnv.NOTION_API_TOKEN),
-        manager_binding: manager.binding, isolation: { home: env.HOME, state: env.NTN_SKILLS_HOME, cache: env.NTN_SKILLS_CACHE_HOME, broker: source.cacheDir }, copied_consumer_state: false });
+        manager_binding: manager.binding,
+        ...(name === blockedMaterializationScenario ? { manager_binding_file: { path: join(env.NTN_SKILLS_CONFIG_HOME, 'source-manager.json'),
+          sha256: hash(await readFile(join(env.NTN_SKILLS_CONFIG_HOME, 'source-manager.json'))) } } : {}),
+        isolation: { home: env.HOME, state: env.NTN_SKILLS_HOME, cache: env.NTN_SKILLS_CACHE_HOME, broker: source.cacheDir }, copied_consumer_state: false });
       return { root, source, env, args };
     };
     const snapshot = async label => {
@@ -724,7 +735,7 @@ syncBuiltinESMExports();
     const first = await createClient(1);
     const firstQuery = localCollisionBody ? alias + '@' + first.source.namespace : alias;
     await open(first, 'discovery');
-    if (name !== 'source-materialize-cold-budget') await step('actual model discovery has no management authority or semantic writes', async () => {
+    if (![blockedMaterializationScenario, 'source-materialize-cold-budget'].includes(name)) await step('actual model discovery has no management authority or semantic writes', async () => {
       plan = { mode: 'call', call: { type: 'toolCall', id: 'readonly-discovery', name: 'notion_list', arguments: { query: alias, limit: 100 } } };
       await rpc.prompt('Find the named Skill without selecting it.');
       assert.equal(management(await rows(join(base, 'sdk.jsonl'))).length, 0);
@@ -734,6 +745,8 @@ syncBuiltinESMExports();
     if (name === 'source-materialize-cache-upgrade') await step('seed mixed legacy and current metadata only in the private consumer Store', async () => {
       seedCacheUpgrade({ path: join(first.env.NTN_SKILLS_HOME, 'state.sqlite'), library: first.source.library, base });
     });
+    if (name === blockedMaterializationScenario) return await runBlockedMaterialization({ name, base, facts, first, manager, service, git, wire, steps, processes, rpc,
+      step, finish, setPlan: value => { plan = value; }, checkWire, readManagerState });
     if (name === 'source-materialize-cancel-late') return await runCancellation({ name, base, info, facts, first, manager, service, git, wire, steps, processes, rpc,
       step, snapshot, finish, setPlan: value => { plan = value; }, checkWire, assertWireSources: helpers.assertWireSources, present, absent });
     // The first process now crosses a real input-receipt boundary.
@@ -957,6 +970,7 @@ async function verifyCancellationEvidence({ base, entry, source, events, proofs,
 }
 
 export async function verifyMaterializationEvidence({ base, entry, source, events, proofs, assertWireSources }) {
+  if (entry.name === blockedMaterializationScenario) return verifyBlockedMaterializationEvidence({ base, source, events, proofs, assertWireSources });
   if (entry.name === 'source-materialize-cancel-late') return verifyCancellationEvidence({ base, entry, source, events, proofs, assertWireSources });
   const receipt = JSON.parse(await readFile(join(base, 'materialization.json'), 'utf8'));
   const facts = JSON.parse(await readFile(join(base, 'source-facts.json'), 'utf8'));

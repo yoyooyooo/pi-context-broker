@@ -156,7 +156,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 
 ## 4. 区分通过范围
 
-首次 `$` 引用、Source readiness、管理 binding、receipt 或失效交接改变时，执行 [Source 物化](features/source-materialization.md) 的 source-materialize-legacy、source-materialize-first、source-materialize-legacy-source、source-materialize-growth、source-materialize-native-root，以及独立取消迟到场景 source-materialize-cancel-late、冷目录慢请求场景 source-materialize-cold-budget，以及混合旧目录升级场景 source-materialize-cache-upgrade。同包固定 manager 实际落地后必须再走普通 consume，核完整 provider 正文、五分钟新 PID 和独立空客户端；projection 调用为 0。模型/代码围栏美元名不授权管理，取消不让迟到结果发布。对应 authority/receipt 单测和 CLI 原未知写故障回放分别保留，管理回执不充当消费证明。
+首次 `$` 引用、Source readiness、管理 binding、receipt 或失效交接改变时，执行 [Source 物化](features/source-materialization.md) 的 source-materialize-legacy、source-materialize-first、source-materialize-legacy-source、source-materialize-growth、source-materialize-native-root，以及独立取消迟到场景 source-materialize-cancel-late、冷目录慢请求场景 source-materialize-cold-budget，以及混合旧目录升级场景 source-materialize-cache-upgrade，以及成员能力阻断负例 source-materialize-blocked-member。同包固定 manager 实际落地后必须再走普通 consume，核完整 provider 正文、五分钟新 PID 和独立空客户端；projection 调用为 0。模型/代码围栏美元名不授权管理，取消不让迟到结果发布。对应 authority/receipt 单测和 CLI 原未知写故障回放分别保留，管理回执不充当消费证明。
 
 首引用前先核完整本地 `$` 目录与实际来源选择；同名本地对象保留，Notion 目标使用有效 namespace 的普通 qualified 引用。日用启动 shell/PATH 与实际 Git 身份一并取证，具体前件见该页；本地正文成功不等于 Notion 物化成功。
 
