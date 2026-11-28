@@ -72,7 +72,7 @@ stateDiagram-v2
 
 实际守卫由 source-materialization.test.ts 的旧实现红、新实现绿、伪造 request/library/target/authroot/phase/code、receipt 后取消和真实 budget checkpoint 到期回放检查。source-materialize-cache-upgrade 另用安装包、实际 Pi、真实 SQLite 及受控 Notion/Git，核两条 v1 与一条 v2 混合目录退休、跨 scope/无关目录保留、完整目录重建和全正文；独立 evidence 必须同时核原 manager stdout/stderr/实际 close 和后续 0 HTTP 暖读。它们是 concrete obligations，保留现有全部模型、cases、expected_rules 与 guard mutations。
 
-source-materialize-blocked-member 单独验证上述 MemberCandidate → NotDispatched 边：真实 Source 注册和 member_patch 通过固定 Git metadata 发现，完整 SDK 返回明确 blocked；有效 manager binding 保持可用，实际 manager spawn、consume 与语义写为0，provider 无原文或派生全文，原 Pi/SDK 完整结清。成员表示能力归配对 CLI，SourceMemberSelection 仅证明来源、目录覆盖和基数准入，不把本例升级为其形式证明。
+source-materialize-blocked-member 单独验证上述 MemberCandidate → NotDispatched 边：真实 Source 注册和 member_patch 通过固定 Git metadata 发现，完整 SDK 返回明确 blocked；有效 manager binding 保持可用，实际 manager spawn、consume 与语义写为0，provider 无原文或派生全文，原 Pi/SDK 完整结清。该回放在 HTTP fixture 完成初始化、任何客户端启动前保留完整 before 及原字节/单调时钟绑定；仅缺失 blocks 的已声明空初始化可以解释输入到 before 的差异，after 继续全值比较，并拒绝缺失、伪造或过晚的 before。成员表示能力归配对 CLI，SourceMemberSelection 仅证明来源、目录覆盖和基数准入，不把本例升级为其形式证明。
 
 ## SelectionGraph
 

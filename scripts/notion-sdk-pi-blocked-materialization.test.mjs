@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { blockedMaterializationFacts, assertBlockedMaterialization } from './notion-sdk-pi-blocked-materialization.mjs';
+import { blockedMaterializationFacts, captureBlockedMaterializationBefore, assertBlockedMaterialization } from './notion-sdk-pi-blocked-materialization.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 function proof() {
@@ -24,13 +24,19 @@ function proof() {
       coverage: 'complete', failures: [], effects: { remote_writes: 'none' }, library_id: 'library', scope: candidate.scope, candidates: [candidate] } },
     { kind: 'context-broker.notion-sdk', event: 'end', operation: 'source-members', id: 'directory', status: 'completed' },
     { kind: 'materialization_observer', event: 'end', code: 0, active_sdk_ids: [] },
-  ].map((row, i) => ({ ...row, observer_pid: 123, observer_monotonic_ns: String(i + 1) }));
-  return { original, facts, events, source: [{ method: 'GET', path: '/v1/source' }], git: [{ status: 200, exit_code: 0 }],
+  ].map((row, i) => ({ ...row, observer_pid: 123, observer_monotonic_ns: String(i + 4) }));
+  const notion = structuredClone(facts.sample.notion); notion.blocks = {};
+  const before = captureBlockedMaterializationBefore(facts, { notion, requests: [] });
+  before.captured_monotonic_ns = '1';
+  const beforeSha256 = hash(JSON.stringify(before, null, 2) + '\n');
+  const clients = { version: 1, kind: 'blocked-clients-start', harness_pid: before.harness_pid,
+    started_monotonic_ns: '2', before_sha256: beforeSha256 };
+  return { original, facts, before, beforeSha256, clients, events, source: [{ method: 'GET', path: '/v1/source' }], git: [{ status: 200, exit_code: 0 }],
     initial: { session_file: '/owned/session', branch: [] },
     session: { session_file: '/owned/session', branch: [{ type: 'message', message: { role: 'user', content: '$lazy-root@current-sdk Apply this Skill to the task.' } }] },
-    lifecycle: [{ event: 'spawn', pid: 123, monotonicNs: '0' }, { event: 'close', code: 0, signal: null, monotonicNs: '6' }],
+    lifecycle: [{ event: 'spawn', pid: 123, monotonicNs: '3' }, { event: 'close', code: 0, signal: null, monotonicNs: '9' }],
     frames: [{ type: 'extension_ui_request', method: 'notify', message: 'SOURCE_MATERIALIZATION_BLOCKED' }, { type: 'agent_end' }],
-    process: { pid: 123, session_file: '/owned/session' }, after: structuredClone(facts.sample.notion), managerPids: [] };
+    process: { pid: 123, session_file: '/owned/session' }, after: structuredClone(before.notion), managerPids: [] };
 }
 const candidate = value => value.events[2].value.candidates[0];
 test('blocked proof uses an authored patch without changing the original Git bytes', () => {
@@ -41,7 +47,7 @@ test('blocked proof uses an authored patch without changing the original Git byt
   assert.deepEqual(assertBlockedMaterialization(value), { candidate: candidate(value), sdk_operations: 1,
     manager_spawns: 0, consume_operations: 0, semantic_writes: 0, projection_writes: 0 });
 });
-const append = (value, row) => value.events.splice(4, 0, { ...row, observer_pid: 123, observer_monotonic_ns: '4' });
+const append = (value, row) => value.events.splice(4, 0, { ...row, observer_pid: 123, observer_monotonic_ns: '7' });
 for (const [label, corrupt] of [
   ['old false-positive candidate', value => { candidate(value).readiness = 'materializable'; }],
   ['missing capability reason', value => { delete candidate(value).reason; }],
@@ -62,3 +68,40 @@ for (const [label, corrupt] of [
   ['missing user diagnostic', value => { value.frames.shift(); }],
   ['altered authored patch', value => { value.facts.sample.notion.sources[0].properties.Options.rich_text[0].plain_text = '{"settings":{"member_patches":{}}}'; }],
 ]) test('blocked proof rejects ' + label, () => { const value = proof(); corrupt(value); assert.throws(() => assertBlockedMaterialization(value)); });
+
+const resealBefore = value => {
+  value.beforeSha256 = hash(JSON.stringify(value.before, null, 2) + '\n');
+  value.clients.before_sha256 = value.beforeSha256;
+};
+test('blocked service baseline records the actual empty blocks initialization without changing the declared input', () => {
+  const value = proof();
+  assert.equal(Object.hasOwn(value.facts.sample.notion, 'blocks'), false);
+  assert.deepEqual(value.before.notion.blocks, {});
+  assert.deepEqual(value.before.notion, { ...value.facts.sample.notion, blocks: {} });
+  assertBlockedMaterialization(value);
+});
+test('blocked service baseline rejects any additional no-request startup mutation', () => {
+  const value = proof(), notion = structuredClone(value.before.notion);
+  notion.skills.push({ id: 'unexpected-startup-owner' });
+  assert.throws(() => captureBlockedMaterializationBefore(value.facts, { notion, requests: [] }));
+});
+test('blocked service baseline requires zero requests before capture', () => {
+  const value = proof();
+  assert.throws(() => captureBlockedMaterializationBefore(value.facts, { notion: value.before.notion, requests: [{ method: 'GET' }] }));
+});
+for (const [label, corrupt, expectedFailure] of [
+  ['missing remote before', value => { delete value.before; }],
+  ['missing client boundary', value => { delete value.clients; }],
+  ['changed before bytes', value => { value.beforeSha256 = 'f'.repeat(64); }],
+  ['forged complete before', value => { value.before.notion.skills.push({ id: 'forged-owner' }); value.after = structuredClone(value.before.notion); resealBefore(value); }, /The baseline differs from the full declared initial service facts/],
+  ['before omitted initialized blocks', value => { delete value.before.notion.blocks; value.after = structuredClone(value.before.notion); resealBefore(value); }, /The baseline differs from the full declared initial service facts/],
+  ['before after a client request', value => { value.before.source_request_count = 1; resealBefore(value); }],
+  ['before at client start', value => { value.before.captured_monotonic_ns = value.clients.started_monotonic_ns; resealBefore(value); }],
+  ['before after client start', value => { value.before.captured_monotonic_ns = '4'; resealBefore(value); }],
+  ['client boundary at Pi spawn', value => { value.clients.started_monotonic_ns = value.lifecycle[0].monotonicNs; }],
+  ['client boundary after Pi spawn', value => { value.clients.started_monotonic_ns = '4'; }],
+  ['foreign baseline harness', value => { value.clients.harness_pid += 1; }],
+  ['subsequent block write', value => { value.after.blocks['new-block'] = [{ id: 'written' }]; }],
+  ['subsequent blocks deletion', value => { delete value.after.blocks; }],
+  ['subsequent Source property write', value => { value.after.sources[0].properties.Options.rich_text[0].plain_text = '{}'; }],
+]) test('blocked baseline rejects ' + label, () => { const value = proof(); corrupt(value); assert.throws(() => assertBlockedMaterialization(value), expectedFailure); });
